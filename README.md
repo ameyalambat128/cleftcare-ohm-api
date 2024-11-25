@@ -56,5 +56,11 @@ docker build -t cleftcare-ohm .
 - Run Docker Container
 
 ```shell
-docker run -p 8000:8000 cleftcare-ohm
+docker run -p 8000:8000 --name cleftcare-ohm-container cleftcare-ohm
+```
+
+Detached (Runs in Background)
+
+```shell
+docker run -p 8000:8000 --name cleftcare-ohm-container -d cleftcare-ohm
 ```

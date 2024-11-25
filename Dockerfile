@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y ffmpeg libsndfile1 && rm -rf /var/lib/a
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the .env file into the container
+COPY .env /app/.env
+
 # Expose the FastAPI port
 EXPOSE 8000
 

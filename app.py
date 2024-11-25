@@ -11,6 +11,7 @@ import torch.nn as nn
 
 from ohm import predict_ohm_rating
 
+load_dotenv()
 # Initialize FastAPI app
 app = FastAPI()
 
