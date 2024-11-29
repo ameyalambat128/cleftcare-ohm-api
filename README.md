@@ -67,6 +67,12 @@ docker run -p 8000:8000 --name cleftcare-ohm-container -d cleftcare-ohm
 
 ### Google Cloud Run Deployment
 
+- Build for linux/amd64, Tag, and Push
+
+```shell
+docker buildx build --platform linux/amd64 -t us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest --push .
+```
+
 - Build Docker Container for AMD64
 
 ```shell
