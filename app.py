@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from transformers import Wav2Vec2Model
 import torch
+import uvicorn
 import torch.nn as nn
 
 from ohm import predict_ohm_rating
@@ -120,3 +121,9 @@ async def predict_ohm(request: PredictRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error processing file: {str(e)}")
+
+
+if __name__ == "__main__":
+    # Read the PORT environment variable, default to 8080 if not set
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
