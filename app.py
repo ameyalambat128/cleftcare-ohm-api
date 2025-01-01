@@ -1,5 +1,5 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from pydantic import BaseModel, EmailStr
 import boto3
 import os
 from tempfile import NamedTemporaryFile
@@ -9,6 +9,8 @@ from transformers import Wav2Vec2Model
 import torch
 import uvicorn
 import torch.nn as nn
+from mailjet_rest import Client
+from typing import List
 
 from ohm import predict_ohm_rating
 
@@ -26,6 +28,49 @@ s3 = boto3.client(
 )
 
 
+class EmailSchema(BaseModel):
+    subject: str
+    body: str
+
+
+async def send_email(email: EmailSchema):
+    api_key = os.environ.get('MAILJET_API_KEY')
+    api_secret = os.environ.get('MAILJET_API_SECRET')
+    mailjet = Client(auth=(api_key, api_secret), version='v3.1')
+
+    data = {
+        'Messages': [
+            {
+                "From": {
+                    "Email": os.environ.get("EMAIL_FROM"),
+                    "Name": os.environ.get("EMAIL_FROM_NAME")
+                },
+                "To": [
+                    {
+                        "Email": "kkothadi@asu.edu",
+                        "Name": "Cleft Care User"
+                    },
+                    {
+                        "Email": "alambat@asu.edu",
+                        "Name": "Cleft Care Admin"
+                    }
+                ],
+                "Subject": email.subject,
+                "HTMLPart": email.body
+            }
+        ]
+    }
+
+    try:
+        result = mailjet.send.create(data=data)
+        if result.status_code == 200:
+            print(f"Email sent successfully: {result.json()}")
+        else:
+            print(
+                f"Failed to send email: {result.status_code}, {result.json()}")
+    except Exception as e:
+        print(f"Exception occurred while sending email: {e}")
+
 """
 Health Check Endpoint
 """
@@ -36,18 +81,13 @@ async def health_check():
     return {"status": "ok"}
 
 
-class PredictRequest(BaseModel):
-    userId: str
-    uploadFileName: str
-
-
 @app.get("/predict-test")
-async def predict_ohm():
+async def predict_ohm(background_tasks: BackgroundTasks):
     upload_file_name = "MILE_03_SP_0002_UTT_0003.wav"
     # Generate S3 file path based on userId
-    # s3_key = f"{upload_file_name}.m4a"  # Customize if needed
     s3_key = upload_file_name
-
+    name = "Test User"
+    user_id = "undefined"
     try:
         audio_dir = os.path.join(os.getcwd(), "audios")
         os.makedirs(audio_dir, exist_ok=True)
@@ -69,6 +109,18 @@ async def predict_ohm():
         temp_folder = Path(temp_file_path).parent
         perceptual_rating = predict_ohm_rating(temp_folder)
 
+        # Prepare email data
+        email = EmailSchema(
+            subject="CleftCare: New Prediction Result",
+            body=(
+                f"<p>The patient {user_id} and {name} was recorded in ASU by the community worker Krupa.</p>"
+                f"<p>The level of hypernasality in its speech as per cleft care is {perceptual_rating}.</p>"
+            )
+        )
+
+        # Add email sending to background tasks
+        background_tasks.add_task(send_email, email)
+
         return {"perceptualRating": perceptual_rating}
 
     except Exception as e:
@@ -82,9 +134,18 @@ Predict Endpoint:
 """
 
 
+class PredictRequest(BaseModel):
+    userId: str
+    name: str
+    promptNumber: int
+    uploadFileName: str
+
+
 @app.post("/predict")
-async def predict_ohm(request: PredictRequest):
+async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks):
     user_id = request.userId
+    name = request.name
+    prompt_number = request.promptNumber
     upload_file_name = request.uploadFileName
     print(
         f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
@@ -111,7 +172,17 @@ async def predict_ohm(request: PredictRequest):
         # Process the downloaded file for prediction
         temp_folder = Path(temp_file_path).parent
         perceptual_rating = predict_ohm_rating(temp_folder)
-        print(f"Predicted perceptual rating: {perceptual_rating}")
+        # Prepare email data
+        email = EmailSchema(
+            subject="CleftCare: New Prediction Result",
+            body=(
+                f"<p>The patient {user_id} and {name} was recorded in ASU by the community worker Krupa.</p>"
+                f"<p>The level of hypernasality in its speech as per cleft care is {perceptual_rating}.</p>"
+            )
+        )
+
+        # Add email sending to background tasks
+        background_tasks.add_task(send_email, email)
         # Delete the .wav file if it was created
         if os.path.exists(wav_path) and wav_path != temp_file_path:
             os.remove(wav_path)
