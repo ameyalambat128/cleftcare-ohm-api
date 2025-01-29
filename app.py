@@ -83,16 +83,24 @@ async def health_check():
 
 @app.get("/predict-test")
 async def predict_ohm(background_tasks: BackgroundTasks):
-    upload_file_name = "MILE_03_SP_0002_UTT_0003.wav"
     # Generate S3 file path based on userId
-    s3_key = upload_file_name
-    name = "Test User"
     user_id = "undefined"
+    name = "Test User"
+    upload_file_name = "MILE_03_SP_0002_UTT_0003.wav"
+    # user_id = request.userId
+    # name = request.name
+    # prompt_number = request.promptNumber
+    # upload_file_name = request.uploadFileName
+    print(
+        f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
+    # Generate S3 file path based on userId
+    s3_key = upload_file_name  # Customize if needed
+
     try:
         audio_dir = os.path.join(os.getcwd(), "audios")
         os.makedirs(audio_dir, exist_ok=True)
         # Download file from S3
-        with NamedTemporaryFile(delete=False, suffix=".m4a", dir=audio_dir) as temp_file:
+        with NamedTemporaryFile(delete=True, suffix=".m4a", dir=audio_dir) as temp_file:
             temp_file_path = temp_file.name
             s3.download_file(S3_BUCKET_NAME, s3_key, temp_file_path)
             print("Downloaded file from S3: ", temp_file_path)
@@ -108,7 +116,6 @@ async def predict_ohm(background_tasks: BackgroundTasks):
         # Process the downloaded file for prediction
         temp_folder = Path(temp_file_path).parent
         perceptual_rating = predict_ohm_rating(temp_folder)
-
         # Prepare email data
         email = EmailSchema(
             subject="CleftCare: New Prediction Result",
@@ -120,7 +127,10 @@ async def predict_ohm(background_tasks: BackgroundTasks):
 
         # Add email sending to background tasks
         background_tasks.add_task(send_email, email)
-
+        # Delete the .wav file if it was created
+        if os.path.exists(wav_path) and wav_path != temp_file_path:
+            os.remove(wav_path)
+            print(f"Deleted .wav file: {wav_path}")
         return {"perceptualRating": perceptual_rating}
 
     except Exception as e:
@@ -137,6 +147,7 @@ Predict Endpoint:
 class PredictRequest(BaseModel):
     userId: str
     name: str
+    communityWorkerName: str
     promptNumber: int
     uploadFileName: str
 
@@ -145,6 +156,7 @@ class PredictRequest(BaseModel):
 async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks):
     user_id = request.userId
     name = request.name
+    community_worker_name = request.communityWorkerName
     prompt_number = request.promptNumber
     upload_file_name = request.uploadFileName
     print(
@@ -176,7 +188,7 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
         email = EmailSchema(
             subject="CleftCare: New Prediction Result",
             body=(
-                f"<p>The patient {user_id} and {name} was recorded in ASU by the community worker Krupa.</p>"
+                f"<p>The patient {user_id} and {name} was recorded at ASU by the community worker {community_worker_name}.</p>"
                 f"<p>The level of hypernasality in its speech as per cleft care is {perceptual_rating}.</p>"
             )
         )
