@@ -86,7 +86,7 @@ async def predict_ohm(background_tasks: BackgroundTasks):
     # Generate S3 file path based on userId
     user_id = "undefined"
     name = "Test User"
-    upload_file_name = "MILE_03_SP_0002_UTT_0003.wav"
+    upload_file_name = "a39ff7d5-b200-4590-83db-ca562f217ec7-1738176080542-25-1.m4a"
     # user_id = request.userId
     # name = request.name
     # prompt_number = request.promptNumber

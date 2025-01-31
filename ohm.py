@@ -42,7 +42,9 @@ class DNNModel(nn.Module):
 
 
 model_path = './models/english_xlsr_librispeech_model_32batch_100h_valid.pth'
-regressor_path = './models/regressor_model.pkl'  # Path to saved regressor model
+# Path to saved regressor model
+english_regressor_path = './models/NMCPC_English_regressor_model_final.pkl'
+kannada_regressor_path = './models/AIISH_Kannada_regressor_model.pkl'
 mean_path = './models/Mean.npy'  # Path to normalization mean
 std_path = './models/Std.npy'  # Path to normalization std
 
@@ -52,7 +54,8 @@ feats_s1 = np.load(std_path)
 
 
 # Load regressor
-regressor = joblib.load(regressor_path)
+english_regressor = joblib.load(english_regressor_path)
+kannada_regressor = joblib.load(kannada_regressor_path)
 
 
 def load_dnn_model(model_path, device):
@@ -152,7 +155,7 @@ def predict_ohm_rating(speaker_folder):
     avg_ohm = process_speaker_folder(speaker_folder)
     if avg_ohm is not None:
         avg_ohm = np.array([[avg_ohm]])
-        perceptual_rating = regressor.predict(avg_ohm)[0]
+        perceptual_rating = english_regressor.predict(avg_ohm)[0]
         return perceptual_rating
     return None
 
