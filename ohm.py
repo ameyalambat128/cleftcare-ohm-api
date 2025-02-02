@@ -151,11 +151,14 @@ def process_speaker_folder(speaker_folder):
 # Function to predict perceptual OHM rating for a speaker
 
 
-def predict_ohm_rating(speaker_folder):
+def predict_ohm_rating(speaker_folder, language):
     avg_ohm = process_speaker_folder(speaker_folder)
     if avg_ohm is not None:
         avg_ohm = np.array([[avg_ohm]])
-        perceptual_rating = english_regressor.predict(avg_ohm)[0]
+        if language == 'kn':
+            perceptual_rating = kannada_regressor.predict(avg_ohm)[0]
+        else:
+            perceptual_rating = english_regressor.predict(avg_ohm)[0]
         return perceptual_rating
     return None
 
@@ -164,7 +167,7 @@ def predict_ohm_rating(speaker_folder):
 if __name__ == "__main__":
     # Update to the folder path of a given speaker
     speaker_folder_path = './Test_spkr_folder'
-    perceptual_rating = predict_ohm_rating(speaker_folder_path)
+    perceptual_rating = predict_ohm_rating(speaker_folder_path, 'en')
     if perceptual_rating is not None:
         print(
             f"Predicted Perceptual OHM Rating for speaker: {perceptual_rating:.2f}")

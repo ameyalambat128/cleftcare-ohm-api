@@ -87,6 +87,7 @@ async def predict_ohm(background_tasks: BackgroundTasks):
     user_id = "undefined"
     name = "Test User"
     upload_file_name = "a39ff7d5-b200-4590-83db-ca562f217ec7-1738176080542-25-1.m4a"
+    language = "en"
     # user_id = request.userId
     # name = request.name
     # prompt_number = request.promptNumber
@@ -115,7 +116,7 @@ async def predict_ohm(background_tasks: BackgroundTasks):
 
         # Process the downloaded file for prediction
         temp_folder = Path(temp_file_path).parent
-        perceptual_rating = predict_ohm_rating(temp_folder)
+        perceptual_rating = predict_ohm_rating(temp_folder, language)
         # Prepare email data
         email = EmailSchema(
             subject="CleftCare: New Prediction Result",
@@ -149,6 +150,7 @@ class PredictRequest(BaseModel):
     name: str
     communityWorkerName: str
     promptNumber: int
+    language: str
     uploadFileName: str
 
 
@@ -158,6 +160,7 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
     name = request.name
     community_worker_name = request.communityWorkerName
     prompt_number = request.promptNumber
+    language = request.language
     upload_file_name = request.uploadFileName
     print(
         f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
@@ -183,7 +186,7 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
 
         # Process the downloaded file for prediction
         temp_folder = Path(temp_file_path).parent
-        perceptual_rating = predict_ohm_rating(temp_folder)
+        perceptual_rating = predict_ohm_rating(temp_folder, language)
         # Prepare email data
         email = EmailSchema(
             subject="CleftCare: New Prediction Result",
