@@ -152,6 +152,7 @@ class PredictRequest(BaseModel):
     promptNumber: int
     language: str
     uploadFileName: str
+    sendEmail: bool
 
 
 @app.post("/predict")
@@ -162,6 +163,8 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
     prompt_number = request.promptNumber
     language = request.language
     upload_file_name = request.uploadFileName
+    send_email_flag = request.sendEmail
+
     print(
         f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
     # Generate S3 file path based on userId
@@ -187,21 +190,28 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
         # Process the downloaded file for prediction
         temp_folder = Path(temp_file_path).parent
         perceptual_rating = predict_ohm_rating(temp_folder, language)
-        # Prepare email data
-        email = EmailSchema(
-            subject="CleftCare: New Prediction Result",
-            body=(
-                f"<p>The patient {user_id} and {name} was recorded at ASU by the community worker {community_worker_name}.</p>"
-                f"<p>The level of hypernasality in its speech as per cleft care is {perceptual_rating}.</p>"
-            )
-        )
 
-        # Add email sending to background tasks
-        background_tasks.add_task(send_email, email)
+        # Only send email if sendEmail is True
+        if send_email_flag:
+            # Prepare email data
+            email = EmailSchema(
+                subject="CleftCare: New Prediction Result",
+                body=(
+                    f"<p>The patient {name} recorded by the community worker {community_worker_name}.</p>"
+                    f"<p>The link to the more details for the patient - https://cleftcare-dashboard.vercel.app/dashboard/{user_id}.</p>"
+                )
+            )
+            # Add email sending to background tasks
+            background_tasks.add_task(send_email, email)
+            print(f"Email scheduled to be sent for user: {user_id}")
+        else:
+            print(f"Email sending skipped for user: {user_id}")
+
         # Delete the .wav file if it was created
         if os.path.exists(wav_path) and wav_path != temp_file_path:
             os.remove(wav_path)
             print(f"Deleted .wav file: {wav_path}")
+
         return {"perceptualRating": perceptual_rating}
 
     except Exception as e:
