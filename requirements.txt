@@ -65,3 +65,4 @@ typing_extensions==4.12.2
 tzdata==2024.2
 urllib3==1.26.20
 uvicorn==0.32.1
+slowapi==0.1.9

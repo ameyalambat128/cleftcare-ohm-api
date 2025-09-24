@@ -148,6 +148,7 @@ The `/gop` endpoint requires Kaldi tooling and Kannada models to function proper
 | `MAILJET_API_SECRET`    | Email service secret        | Optional |
 | `EMAIL_FROM`            | Sender email                | Optional |
 | `EMAIL_FROM_NAME`       | Sender name                 | Optional |
+| `API_KEY`               | Authentication API key      | Yes      |
 | `PORT`                  | Server port (default: 8080) | No       |
 
 ## Deployment Notes
