@@ -246,6 +246,26 @@ class GOPRequest(BaseModel):
     sendEmail: bool
 
 
+# Standardized response models
+class APIResponse(BaseModel):
+    success: bool
+    data: dict
+    metadata: dict
+
+def create_response(success: bool, data: dict, request_id: str, processing_time: float, error_message: str = None) -> dict:
+    """Create standardized API response"""
+    return {
+        "success": success,
+        "data": data if success else {},
+        "metadata": {
+            "requestId": request_id,
+            "processingTime": round(processing_time, 3),
+            "timestamp": int(time.time() * 1000),
+            "error": error_message if not success else None
+        }
+    }
+
+
 @app.post("/ohm")
 @limiter.limit("50/minute")
 async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predict_request: PredictRequest, api_key: str = Depends(verify_api_key)):
@@ -317,12 +337,28 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
             os.remove(wav_path)
             print(f"Deleted .wav file: {wav_path}")
 
-        return {"perceptualRating": perceptual_rating}
+        # Calculate processing time and create response
+        processing_time = time.time() - start_time
+        response_data = {"perceptualRating": perceptual_rating}
+        return create_response(
+            success=True,
+            data=response_data,
+            request_id=request_id,
+            processing_time=processing_time
+        )
 
     except Exception as e:
+        processing_time = time.time() - start_time
         print(f"[{request_id}] OHM processing error for user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Internal server error occurred during processing")
+
+        error_response = create_response(
+            success=False,
+            data={},
+            request_id=request_id,
+            processing_time=processing_time,
+            error_message="Internal server error occurred during processing"
+        )
+        raise HTTPException(status_code=500, detail=error_response)
 
 
 @app.post("/gop")
@@ -395,12 +431,27 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
             os.remove(wav_path)
             print(f"Deleted .wav file: {wav_path}")
 
-        return gop_result
+        # Calculate processing time and create response
+        processing_time = time.time() - start_time
+        return create_response(
+            success=True,
+            data=gop_result,
+            request_id=request_id,
+            processing_time=processing_time
+        )
 
     except Exception as e:
+        processing_time = time.time() - start_time
         print(f"[{request_id}] GOP processing error for user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Internal server error occurred during GOP processing")
+
+        error_response = create_response(
+            success=False,
+            data={},
+            request_id=request_id,
+            processing_time=processing_time,
+            error_message="Internal server error occurred during GOP processing"
+        )
+        raise HTTPException(status_code=500, detail=error_response)
 
 
 if __name__ == "__main__":
