@@ -80,6 +80,77 @@
 }
 ```
 
+**Batch Sentence Processing**
+
+- URL: `/api/v1/process-sentence`
+- Method: `POST`
+- Description: Process multiple audio files for one sentence - runs GOP on all files, finds the best score, then runs OHM on the best file. Returns comprehensive results in a single request.
+
+**Request Body**
+
+```json
+{
+  "userId": "string",
+  "name": "string",
+  "communityWorkerName": "string",
+  "sentenceId": 1,
+  "transcript": "ಪಟ್ಟಿ",
+  "language": "kn",
+  "uploadFileNames": ["file1.m4a", "file2.m4a", "file3.m4a"],
+  "sendEmail": true
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "sentenceId": 1,
+    "transcript": "ಪಟ್ಟಿ",
+    "totalFiles": 3,
+    "gopResults": [
+      {
+        "filename": "file1.m4a",
+        "utt_id": "file1",
+        "sentence_gop": -0.234,
+        "perphone_gop": [["p", -0.1], ["a", 0.2]],
+        "latency_ms": 2500
+      }
+    ],
+    "bestFile": {
+      "filename": "file2.m4a",
+      "gopScore": -0.123
+    },
+    "ohmRating": 2.45,
+    "errors": null
+  },
+  "metadata": {
+    "requestId": "uuid",
+    "processingTime": 12.456,
+    "timestamp": 1738176080542,
+    "error": null
+  }
+}
+```
+
+## Project Structure
+
+The API is now organized into a modular structure:
+
+```
+├── app.py              # Main FastAPI application
+├── endpoints/          # Route handlers
+│   └── batch.py       # Batch processing endpoints
+├── models/            # Pydantic schemas
+│   └── schemas.py     # Request/response models
+├── services/          # Business logic
+│   └── processing.py  # Audio processing services
+└── utils/             # Utilities
+    └── helpers.py     # Helper functions and validation
+```
+
 ### Docker commands
 
 - Build Docker Container
