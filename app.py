@@ -1,7 +1,13 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import boto3
 import os
+import subprocess
+import re
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 from dotenv import load_dotenv
@@ -11,13 +17,84 @@ import uvicorn
 import torch.nn as nn
 from mailjet_rest import Client
 from typing import List
+import uuid
+import time
 
 from ohm import predict_ohm_rating
 from gop_module import compute_gop
 
 load_dotenv()
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 # Initialize FastAPI app
 app = FastAPI()
+
+# Add rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Configure CORS for React Native
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure with specific domains in production
+    allow_credentials=False,  # Set to True if you need credentials
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+# Input validation functions
+def validate_upload_filename(filename: str) -> str:
+    """Validate and sanitize upload filename to prevent path traversal"""
+    if not filename:
+        raise ValueError("Filename cannot be empty")
+
+    # Remove any path separators and relative path indicators
+    filename = os.path.basename(filename)
+    filename = filename.replace('..', '')
+
+    # Allow only alphanumeric, hyphens, underscores, and dots
+    if not re.match(r'^[a-zA-Z0-9._-]+$', filename):
+        raise ValueError("Invalid filename format")
+
+    # Check file extension (only allow expected audio formats)
+    allowed_extensions = {'.m4a', '.wav', '.mp3', '.flac'}
+    _, ext = os.path.splitext(filename.lower())
+    if ext not in allowed_extensions:
+        raise ValueError(f"Invalid file extension. Allowed: {', '.join(allowed_extensions)}")
+
+    return filename
+
+# Authentication middleware
+def verify_api_key(x_api_key: str = Header(None)) -> str:
+    """Verify API key from request headers"""
+    expected_api_key = os.getenv('API_KEY')
+
+    if not expected_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error"
+        )
+
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="API key required"
+        )
+
+    if x_api_key != expected_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
+
+    return x_api_key
+
+# Request ID generation
+def generate_request_id() -> str:
+    """Generate a unique request ID for tracking"""
+    return str(uuid.uuid4())
 
 # S3 Client Setup
 S3_BUCKET_NAME = 'cleftcare-test'
@@ -111,7 +188,11 @@ async def predict_ohm(background_tasks: BackgroundTasks):
             if not temp_file_path.endswith(".wav"):
                 # Convert .m4a to .wav
                 wav_path = temp_file_path.replace(".m4a", ".wav")
-                os.system(f"ffmpeg -i {temp_file_path} {wav_path}")
+                result = subprocess.run([
+                    "ffmpeg", "-i", temp_file_path, wav_path
+                ], capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
             else:
                 wav_path = temp_file_path
 
@@ -166,17 +247,27 @@ class GOPRequest(BaseModel):
 
 
 @app.post("/ohm")
-async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks):
-    user_id = request.userId
-    name = request.name
-    community_worker_name = request.communityWorkerName
-    prompt_number = request.promptNumber
-    language = request.language
-    upload_file_name = request.uploadFileName
-    send_email_flag = request.sendEmail
+@limiter.limit("50/minute")
+async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predict_request: PredictRequest, api_key: str = Depends(verify_api_key)):
+    # Generate request ID for tracking
+    request_id = generate_request_id()
+    start_time = time.time()
 
-    print(
-        f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
+    user_id = predict_request.userId
+    name = predict_request.name
+    community_worker_name = predict_request.communityWorkerName
+    prompt_number = predict_request.promptNumber
+    language = predict_request.language
+    upload_file_name = predict_request.uploadFileName
+    send_email_flag = predict_request.sendEmail
+
+    # Validate and sanitize filename
+    try:
+        upload_file_name = validate_upload_filename(upload_file_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid filename: {str(e)}")
+
+    print(f"[{request_id}] Received OHM request for userId: {user_id}")
     # Generate S3 file path based on userId
     s3_key = upload_file_name  # Customize if needed
 
@@ -193,7 +284,11 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
             if not temp_file_path.endswith(".wav"):
                 # Convert .m4a to .wav
                 wav_path = temp_file_path.replace(".m4a", ".wav")
-                os.system(f"ffmpeg -i {temp_file_path} {wav_path}")
+                result = subprocess.run([
+                    "ffmpeg", "-i", temp_file_path, wav_path
+                ], capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
             else:
                 wav_path = temp_file_path
 
@@ -225,21 +320,32 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
         return {"perceptualRating": perceptual_rating}
 
     except Exception as e:
+        print(f"[{request_id}] OHM processing error for user {user_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error processing file: {str(e)}")
+            status_code=500, detail="Internal server error occurred during processing")
 
 
 @app.post("/gop")
-async def predict_gop(request: GOPRequest, background_tasks: BackgroundTasks):
-    user_id = request.userId
-    name = request.name
-    community_worker_name = request.communityWorkerName
-    transcript = request.transcript
-    upload_file_name = request.uploadFileName
-    send_email_flag = request.sendEmail
+@limiter.limit("200/minute")
+async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_request: GOPRequest, api_key: str = Depends(verify_api_key)):
+    # Generate request ID for tracking
+    request_id = generate_request_id()
+    start_time = time.time()
 
-    print(
-        f"Received GOP request for userId: {user_id}, uploadFileName: {upload_file_name}")
+    user_id = gop_request.userId
+    name = gop_request.name
+    community_worker_name = gop_request.communityWorkerName
+    transcript = gop_request.transcript
+    upload_file_name = gop_request.uploadFileName
+    send_email_flag = gop_request.sendEmail
+
+    # Validate and sanitize filename
+    try:
+        upload_file_name = validate_upload_filename(upload_file_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid filename: {str(e)}")
+
+    print(f"[{request_id}] Received GOP request for userId: {user_id}")
     # Generate S3 file path based on userId
     s3_key = upload_file_name  # Customize if needed
 
@@ -256,7 +362,11 @@ async def predict_gop(request: GOPRequest, background_tasks: BackgroundTasks):
             if not temp_file_path.endswith(".wav"):
                 # Convert .m4a to .wav
                 wav_path = temp_file_path.replace(".m4a", ".wav")
-                os.system(f"ffmpeg -i {temp_file_path} {wav_path}")
+                result = subprocess.run([
+                    "ffmpeg", "-i", temp_file_path, wav_path
+                ], capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
             else:
                 wav_path = temp_file_path
 
@@ -288,8 +398,9 @@ async def predict_gop(request: GOPRequest, background_tasks: BackgroundTasks):
         return gop_result
 
     except Exception as e:
+        print(f"[{request_id}] GOP processing error for user {user_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error processing GOP: {str(e)}")
+            status_code=500, detail="Internal server error occurred during GOP processing")
 
 
 if __name__ == "__main__":
