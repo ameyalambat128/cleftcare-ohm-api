@@ -23,6 +23,12 @@ import time
 from ohm import predict_ohm_rating
 from gop_module import compute_gop
 
+# Import new modular components
+from models.schemas import PredictRequest, GOPRequest, EmailSchema, APIResponse
+from services.processing import AudioProcessor
+from utils.helpers import generate_request_id, validate_upload_filename, create_response, update_status, status_tracking
+from endpoints.batch import router as batch_router
+
 load_dotenv()
 
 # Initialize rate limiter
@@ -44,27 +50,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Input validation functions
-def validate_upload_filename(filename: str) -> str:
-    """Validate and sanitize upload filename to prevent path traversal"""
-    if not filename:
-        raise ValueError("Filename cannot be empty")
-
-    # Remove any path separators and relative path indicators
-    filename = os.path.basename(filename)
-    filename = filename.replace('..', '')
-
-    # Allow only alphanumeric, hyphens, underscores, and dots
-    if not re.match(r'^[a-zA-Z0-9._-]+$', filename):
-        raise ValueError("Invalid filename format")
-
-    # Check file extension (only allow expected audio formats)
-    allowed_extensions = {'.m4a', '.wav', '.mp3', '.flac'}
-    _, ext = os.path.splitext(filename.lower())
-    if ext not in allowed_extensions:
-        raise ValueError(f"Invalid file extension. Allowed: {', '.join(allowed_extensions)}")
-
-    return filename
+# Initialize AudioProcessor for dependency injection
+audio_processor = None
 
 # Authentication middleware
 def verify_api_key(x_api_key: str = Header(None)) -> str:
@@ -91,27 +78,6 @@ def verify_api_key(x_api_key: str = Header(None)) -> str:
 
     return x_api_key
 
-# In-memory status tracking
-status_tracking = {}
-
-def update_status(user_id: str, request_id: str, status: str, endpoint: str, data: dict = None):
-    """Update processing status for a user"""
-    if user_id not in status_tracking:
-        status_tracking[user_id] = []
-
-    status_tracking[user_id].append({
-        "requestId": request_id,
-        "status": status,  # "processing", "completed", "failed"
-        "endpoint": endpoint,
-        "timestamp": int(time.time() * 1000),
-        "data": data or {}
-    })
-
-# Request ID generation
-def generate_request_id() -> str:
-    """Generate a unique request ID for tracking"""
-    return str(uuid.uuid4())
-
 # S3 Client Setup
 S3_BUCKET_NAME = 'cleftcare-test'
 s3 = boto3.client(
@@ -121,10 +87,12 @@ s3 = boto3.client(
     region_name=os.getenv('AWS_DEFAULT_REGION')
 )
 
-
-class EmailSchema(BaseModel):
-    subject: str
-    body: str
+# Initialize global AudioProcessor after S3 client is ready
+def get_audio_processor():
+    global audio_processor
+    if audio_processor is None:
+        audio_processor = AudioProcessor(s3, S3_BUCKET_NAME)
+    return audio_processor
 
 
 async def send_email(email: EmailSchema):
@@ -238,49 +206,8 @@ async def predict_ohm(background_tasks: BackgroundTasks):
 
 
 """
-Predict Endpoint:
-- Accepts a POST request with userId and uploadFileName
+Existing Endpoints - Keep all functionality intact
 """
-
-
-class PredictRequest(BaseModel):
-    userId: str
-    name: str
-    communityWorkerName: str
-    promptNumber: int
-    language: str
-    uploadFileName: str
-    sendEmail: bool
-
-
-class GOPRequest(BaseModel):
-    userId: str
-    name: str
-    communityWorkerName: str
-    transcript: str
-    uploadFileName: str
-    sendEmail: bool
-
-
-# Standardized response models
-class APIResponse(BaseModel):
-    success: bool
-    data: dict
-    metadata: dict
-
-def create_response(success: bool, data: dict, request_id: str, processing_time: float, error_message: str = None) -> dict:
-    """Create standardized API response"""
-    return {
-        "success": success,
-        "data": data if success else {},
-        "metadata": {
-            "requestId": request_id,
-            "processingTime": round(processing_time, 3),
-            "timestamp": int(time.time() * 1000),
-            "error": error_message if not success else None
-        }
-    }
-
 
 @app.get("/status/{user_id}")
 async def get_status(user_id: str, api_key: str = Depends(verify_api_key)):
@@ -510,6 +437,10 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
             error_message="Internal server error occurred during GOP processing"
         )
         raise HTTPException(status_code=500, detail=error_response)
+
+
+# Add new batch processing endpoints
+app.include_router(batch_router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
