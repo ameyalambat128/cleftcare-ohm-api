@@ -91,6 +91,22 @@ def verify_api_key(x_api_key: str = Header(None)) -> str:
 
     return x_api_key
 
+# In-memory status tracking
+status_tracking = {}
+
+def update_status(user_id: str, request_id: str, status: str, endpoint: str, data: dict = None):
+    """Update processing status for a user"""
+    if user_id not in status_tracking:
+        status_tracking[user_id] = []
+
+    status_tracking[user_id].append({
+        "requestId": request_id,
+        "status": status,  # "processing", "completed", "failed"
+        "endpoint": endpoint,
+        "timestamp": int(time.time() * 1000),
+        "data": data or {}
+    })
+
 # Request ID generation
 def generate_request_id() -> str:
     """Generate a unique request ID for tracking"""
@@ -266,6 +282,28 @@ def create_response(success: bool, data: dict, request_id: str, processing_time:
     }
 
 
+@app.get("/status/{user_id}")
+async def get_status(user_id: str, api_key: str = Depends(verify_api_key)):
+    """Get processing status for a user"""
+    if user_id not in status_tracking:
+        return create_response(
+            success=True,
+            data={"requests": []},
+            request_id="status-check",
+            processing_time=0.001
+        )
+
+    # Get recent requests (last 100)
+    recent_requests = status_tracking[user_id][-100:]
+
+    return create_response(
+        success=True,
+        data={"requests": recent_requests},
+        request_id="status-check",
+        processing_time=0.001
+    )
+
+
 @app.post("/ohm")
 @limiter.limit("50/minute")
 async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predict_request: PredictRequest, api_key: str = Depends(verify_api_key)):
@@ -288,6 +326,9 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
         raise HTTPException(status_code=400, detail=f"Invalid filename: {str(e)}")
 
     print(f"[{request_id}] Received OHM request for userId: {user_id}")
+
+    # Update status to processing
+    update_status(user_id, request_id, "processing", "ohm")
     # Generate S3 file path based on userId
     s3_key = upload_file_name  # Customize if needed
 
@@ -340,6 +381,10 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
         # Calculate processing time and create response
         processing_time = time.time() - start_time
         response_data = {"perceptualRating": perceptual_rating}
+
+        # Update status to completed
+        update_status(user_id, request_id, "completed", "ohm", response_data)
+
         return create_response(
             success=True,
             data=response_data,
@@ -350,6 +395,9 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
     except Exception as e:
         processing_time = time.time() - start_time
         print(f"[{request_id}] OHM processing error for user {user_id}: {str(e)}")
+
+        # Update status to failed
+        update_status(user_id, request_id, "failed", "ohm", {"error": str(e)})
 
         error_response = create_response(
             success=False,
@@ -382,6 +430,9 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
         raise HTTPException(status_code=400, detail=f"Invalid filename: {str(e)}")
 
     print(f"[{request_id}] Received GOP request for userId: {user_id}")
+
+    # Update status to processing
+    update_status(user_id, request_id, "processing", "gop")
     # Generate S3 file path based on userId
     s3_key = upload_file_name  # Customize if needed
 
@@ -433,6 +484,10 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
 
         # Calculate processing time and create response
         processing_time = time.time() - start_time
+
+        # Update status to completed
+        update_status(user_id, request_id, "completed", "gop", gop_result)
+
         return create_response(
             success=True,
             data=gop_result,
@@ -443,6 +498,9 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
     except Exception as e:
         processing_time = time.time() - start_time
         print(f"[{request_id}] GOP processing error for user {user_id}: {str(e)}")
+
+        # Update status to failed
+        update_status(user_id, request_id, "failed", "gop", {"error": str(e)})
 
         error_response = create_response(
             success=False,
