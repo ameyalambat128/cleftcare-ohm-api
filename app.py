@@ -13,6 +13,7 @@ from mailjet_rest import Client
 from typing import List
 
 from ohm import predict_ohm_rating
+from gop_module import compute_gop
 
 load_dotenv()
 # Initialize FastAPI app
@@ -46,10 +47,10 @@ async def send_email(email: EmailSchema):
                     "Name": os.environ.get("EMAIL_FROM_NAME")
                 },
                 "To": [
-                    {
-                        "Email": "kkothadi@asu.edu",
-                        "Name": "Cleft Care User"
-                    },
+                    # {
+                    #     "Email": "kkothadi@asu.edu",
+                    #     "Name": "Cleft Care User"
+                    # },
                     {
                         "Email": "alambat@asu.edu",
                         "Name": "Cleft Care Admin"
@@ -155,6 +156,15 @@ class PredictRequest(BaseModel):
     sendEmail: bool
 
 
+class GOPRequest(BaseModel):
+    userId: str
+    name: str
+    communityWorkerName: str
+    transcript: str
+    uploadFileName: str
+    sendEmail: bool
+
+
 @app.post("/predict")
 async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks):
     user_id = request.userId
@@ -217,6 +227,69 @@ async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error processing file: {str(e)}")
+
+
+@app.post("/gop")
+async def predict_gop(request: GOPRequest, background_tasks: BackgroundTasks):
+    user_id = request.userId
+    name = request.name
+    community_worker_name = request.communityWorkerName
+    transcript = request.transcript
+    upload_file_name = request.uploadFileName
+    send_email_flag = request.sendEmail
+
+    print(
+        f"Received GOP request for userId: {user_id}, uploadFileName: {upload_file_name}")
+    # Generate S3 file path based on userId
+    s3_key = upload_file_name  # Customize if needed
+
+    try:
+        audio_dir = os.path.join(os.getcwd(), "audios")
+        os.makedirs(audio_dir, exist_ok=True)
+        # Download file from S3
+        with NamedTemporaryFile(delete=True, suffix=".m4a", dir=audio_dir) as temp_file:
+            temp_file_path = temp_file.name
+            s3.download_file(S3_BUCKET_NAME, s3_key, temp_file_path)
+            print("Downloaded file from S3: ", temp_file_path)
+
+            # Check if the file is already in .wav format
+            if not temp_file_path.endswith(".wav"):
+                # Convert .m4a to .wav
+                wav_path = temp_file_path.replace(".m4a", ".wav")
+                os.system(f"ffmpeg -i {temp_file_path} {wav_path}")
+            else:
+                wav_path = temp_file_path
+
+        # Process the downloaded file for GOP prediction
+        gop_result = compute_gop(wav_path, transcript)
+
+        # Only send email if sendEmail is True
+        if send_email_flag:
+            # Prepare email data
+            email = EmailSchema(
+                subject="CleftCare: New GOP Assessment Result",
+                body=(
+                    f"<p>The patient {name} recorded by the community worker {community_worker_name}.</p>"
+                    f"<p>GOP Assessment completed with sentence score: {gop_result.get('sentence_gop', 'N/A')}</p>"
+                    f"<p>The link to the more details for the patient - https://cleftcare-dashboard.vercel.app/dashboard/{user_id}.</p>"
+                )
+            )
+            # Add email sending to background tasks
+            background_tasks.add_task(send_email, email)
+            print(f"Email scheduled to be sent for user: {user_id}")
+        else:
+            print(f"Email sending skipped for user: {user_id}")
+
+        # Delete the .wav file if it was created
+        if os.path.exists(wav_path) and wav_path != temp_file_path:
+            os.remove(wav_path)
+            print(f"Deleted .wav file: {wav_path}")
+
+        return gop_result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error processing GOP: {str(e)}")
 
 
 if __name__ == "__main__":

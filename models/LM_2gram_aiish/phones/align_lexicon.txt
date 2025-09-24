@@ -1,0 +1,44 @@
+!sil !sil sil_S
+<eps> <eps> sil
+sil sil sil_S
+ಅಜ್ಜ ಅಜ್ಜ a_B j_I j_I a_E
+ಅಜ್ಜಿ ಅಜ್ಜಿ a_B j_I j_I i_E
+ಅದು ಅದು a_B d_I u_E
+ಅಪ್ಪ ಅಪ್ಪ a_B p_I p_I a_E
+ಇದು ಇದು i_B d_I u_E
+ಓಡಿದ ಓಡಿದ oo_B dx_I i_I d_I a_E
+ಕತ್ತರಿ ಕತ್ತರಿ k_B a_I t_I t_I a_I r_I i_E
+ಕಪ್ ಕಪ್ k_B a_I p_E
+ಕಪ್ಪು ಕಪ್ಪು k_B a_I p_I p_I u_E
+ಕಾಗೆ ಕಾಗೆ k_B aa_I g_I e_E
+ಕಾಡಿಗೆ ಕಾಡಿಗೆ k_B aa_I dx_I i_I g_I e_E
+ಕಾಲು ಕಾಲು k_B aa_I l_I u_E
+ಕೊಡು ಕೊಡು k_B o_I dx_I u_E
+ಗಸ ಗಸ g_B a_I s_I a_E
+ಗೀತಾ ಗೀತಾ g_B ii_I t_I aa_E
+ಚಪಾತಿ ಚಪಾತಿ c_B a_I p_I aa_I t_I i_E
+ಚಾಕು ಚಾಕು c_B aa_I k_I u_E
+ಚಾಚಾ ಚಾಚಾ c_B aa_I c_I aa_E
+ಚೂಪಾದ ಚೂಪಾದ c_B uu_I p_I aa_I d_I a_E
+ಜಲಪಾತ ಜಲಪಾತ j_B a_I l_I a_I p_I aa_I t_I a_E
+ಜಾತ್ರಗೆ ಜಾತ್ರಗೆ j_B aa_I t_I r_I a_I g_I e_E
+ಜೋಗ ಜೋಗ j_B oo_I g_I a_E
+ತಬಲ ತಬಲ t_B a_I b_I a_I l_I a_E
+ತಾ ತಾ t_B aa_E
+ತಾತಾ ತಾತಾ t_B aa_I t_I aa_E
+ದಪ್ಪ ದಪ್ಪ d_B a_I p_I p_I a_E
+ದವಸ ದವಸ d_B a_I w_I a_I s_I a_E
+ಪಟ ಪಟ p_B a_I tx_I a_E
+ಪಾಯಸ ಪಾಯಸ p_B aa_I y_I a_I s_I a_E
+ಬಟ್ಟೆ ಬಟ್ಟೆ b_B a_I tx_I tx_I e_E
+ಬಾವುಟ ಬಾವುಟ b_B aa_I w_I u_I tx_I a_E
+ಬಿಸಿಬಿಸಿ ಬಿಸಿಬಿಸಿ b_B i_I s_I i_I b_I i_I s_I i_E
+ಬೇಗ ಬೇಗ b_B ee_I g_I a_E
+ಬೇಡ ಬೇಡ b_B ee_I dx_I a_E
+ಶಾರದಾ ಶಾರದಾ sh_B aa_I r_I a_I d_I aa_E
+ಶಾಲೆಗೆ ಶಾಲೆಗೆ sh_B aa_I l_I e_I g_I e_E
+ಸರಿತಾ ಸರಿತಾ s_B a_I r_I i_I t_I aa_E
+ಹೊಸ ಹೊಸ h_B o_I s_I a_E
+ಹೋಗು ಹೋಗು h_B oo_I g_I u_E
+ಹೋದರು ಹೋದರು h_B oo_I d_I a_I r_I u_E
+ಹೋದಳು ಹೋದಳು h_B oo_I d_I a_I lx_I u_E
