@@ -22,18 +22,23 @@
 - Method: `GET`
 - Description: Downloads a test audio file from S3, processes it, and returns the perceptual rating.
 
-**Predict OHM Rating**
+**OHM Assessment**
 
-- URL: `/predict`
+- URL: `/ohm`
 - Method: `POST`
-- Description: Accepts a POST request with `userId` and `uploadFileName`, downloads the specified audio file from S3, processes it, and returns the perceptual rating.
+- Description: Accepts a POST request with user details and audio file info, downloads the specified audio file from S3, processes it with OHM model, and returns the perceptual rating.
 
 **Request Body**
 
 ```json
 {
   "userId": "string",
-  "uploadFileName": "string"
+  "name": "string",
+  "communityWorkerName": "string",
+  "promptNumber": 1,
+  "language": "en",
+  "uploadFileName": "string",
+  "sendEmail": true
 }
 ```
 
@@ -42,6 +47,36 @@
 ```json
 {
   "perceptualRating": <rating>
+}
+```
+
+**GOP Assessment**
+
+- URL: `/gop`
+- Method: `POST`
+- Description: Accepts a POST request with audio file info and transcript, downloads the specified audio file from S3, processes it with Kaldi GOP system, and returns pronunciation assessment scores.
+
+**Request Body**
+
+```json
+{
+  "userId": "string",
+  "name": "string",
+  "communityWorkerName": "string",
+  "transcript": "ಪಟ್ಟಿ",
+  "uploadFileName": "string",
+  "sendEmail": true
+}
+```
+
+**Response**
+
+```json
+{
+  "utt_id": "filename",
+  "sentence_gop": -0.234,
+  "perphone_gop": [["p", -0.1], ["a", 0.2], ["t", -0.3]],
+  "latency_ms": 2500
 }
 ```
 
@@ -91,82 +126,16 @@ docker tag cleftcare-ohm us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftca
 docker push us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest
 ```
 
-## Additional Endpoints (GOP + Combined)
+## GOP System Requirements
 
-The API can be extended with Kannada GOP (Goodness of Pronunciation) and a Combined assessment (OHM + GOP). These require Kaldi tooling and Kannada models.
+The `/gop` endpoint requires Kaldi tooling and Kannada models to function properly:
 
-### GOP Assessment (Kannada)
-
-- URL: `/gop/predict`
-- Method: `POST`
-- Description: Upload a WAV file and the expected transcript to compute sentence-level and per-phone GOP.
-
-Form Data:
-
-```
-wav_file: <WAV file>
-transcript: <string>
-```
-
-Example Response:
-
-```json
-{
-  "service": "gop",
-  "utt_id": "input",
-  "sentence_gop": -0.234,
-  "perphone_gop": [
-    ["p", -0.1],
-    ["a", 0.2]
-  ],
-  "latency_ms": 2500,
-  "transcript": "ಪಟ್ಟಿ"
-}
-```
-
-### Combined Assessment (OHM + GOP)
-
-- URL: `/assess`
-- Method: `POST`
-- Description: Downloads audio from S3 (same inputs as OHM) and returns both OHM and GOP results in one response.
-
-Request Body (JSON):
-
-```json
-{
-  "userId": "string",
-  "name": "string",
-  "communityWorkerName": "string",
-  "promptNumber": 1,
-  "language": "en|kn",
-  "uploadFileName": "string",
-  "sendEmail": true,
-  "transcript": "optional transcript for GOP"
-}
-```
-
-Example Response:
-
-```json
-{
-  "userId": "patient123",
-  "name": "John Doe",
-  "language": "kn",
-  "assessments": {
-    "ohm": {
-      "perceptualRating": 2.45,
-      "description": "Oral Hypernasality Measure for cleft lip/palate assessment"
-    },
-    "gop": {
-      "sentence_gop": -0.234,
-      "perphone_gop": [["p", -0.1]],
-      "transcript": "ಪಟ್ಟಿ",
-      "description": "Goodness of Pronunciation for general speech quality"
-    }
-  },
-  "timestamp": 2500
-}
-```
+- **Kaldi binaries**: `steps/`, `utils/`, `local/` directories with speech processing scripts
+- **Configuration**: `conf/mfcc_hires.conf` for MFCC feature extraction
+- **Models**:
+  - `models/vosk_kannada_model/` - Pre-trained Kannada acoustic model
+  - `models/LM_2gram_aiish/` - 2-gram language model for Kannada
+- **Utilities**: `make_text_phone.pl` for phonetic text conversion
 
 ## Environment Variables
 

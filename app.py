@@ -165,7 +165,7 @@ class GOPRequest(BaseModel):
     sendEmail: bool
 
 
-@app.post("/predict")
+@app.post("/ohm")
 async def predict_ohm(request: PredictRequest, background_tasks: BackgroundTasks):
     user_id = request.userId
     name = request.name
