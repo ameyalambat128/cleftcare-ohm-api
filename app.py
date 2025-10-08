@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -26,7 +26,7 @@ from gop_module import compute_gop
 # Import new modular components
 from models.schemas import PredictRequest, GOPRequest, EmailSchema, APIResponse
 from services.processing import AudioProcessor
-from utils.helpers import generate_request_id, validate_upload_filename, create_response, update_status, status_tracking
+from api_utils.helpers import generate_request_id, validate_upload_filename, create_response, update_status, status_tracking
 from endpoints.batch import router as batch_router
 
 load_dotenv()
@@ -93,6 +93,160 @@ def get_audio_processor():
     if audio_processor is None:
         audio_processor = AudioProcessor(s3, S3_BUCKET_NAME)
     return audio_processor
+
+
+"""
+Lightweight test endpoints (development): run OHM or GOP individually on a given filename.
+- In development: reads from audios/ or audios/samples/
+- In production: downloads from S3
+"""
+
+def _sanitize_floats_for_json(obj):
+    import math
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_floats_for_json(elem) for elem in obj]
+    return obj
+
+class TestOHMInput(BaseModel):
+    uploadFileName: str
+    language: str
+
+
+@app.post("/api/v1/test/ohm")
+async def test_ohm(body: TestOHMInput):
+    processor = get_audio_processor()
+    try:
+        wav_path = processor.download_and_convert_audio(body.uploadFileName)
+        rating = predict_ohm_rating(Path(wav_path).parent, body.language)
+        return _sanitize_floats_for_json({"success": True, "ohmRating": rating, "wavPath": wav_path})
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+class TestGOPInput(BaseModel):
+    uploadFileName: str
+    transcript: str
+
+
+@app.post("/api/v1/test/gop")
+async def test_gop(body: TestGOPInput):
+    processor = get_audio_processor()
+    try:
+        wav_path = processor.download_and_convert_audio(body.uploadFileName)
+        result = compute_gop(wav_path, body.transcript)
+        return _sanitize_floats_for_json({"success": True, "gop": result, "wavPath": wav_path})
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/v1/gop/upload")
+async def gop_upload(
+    wav: UploadFile = File(...),
+    transcript: str = Form(...)
+):
+    """
+    Local file upload endpoint for GOP testing.
+    Similar to shruthi-gop-original Flask endpoint.
+    Accepts: multipart/form-data with 'wav' file and 'transcript' text
+    """
+    import tempfile
+
+    try:
+        # Save uploaded file to temporary location
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+            content = await wav.read()
+            tmp_wav.write(content)
+            wav_path = tmp_wav.name
+
+        # Process with GOP
+        result = compute_gop(wav_path, transcript)
+
+        # Clean up temporary file
+        os.remove(wav_path)
+
+        return _sanitize_floats_for_json(result)
+
+    except Exception as e:
+        # Clean up on error
+        if 'wav_path' in locals() and os.path.exists(wav_path):
+            os.remove(wav_path)
+        return {"error": str(e), "utt_id": None, "sentence_gop": None}
+
+
+@app.post("/api/v1/test/gop-ohm")
+async def test_gop_ohm(
+    wav: UploadFile = File(...),
+    transcript: str = Form(...),
+    language: str = Form(default="kn")
+):
+    """
+    Test endpoint for GOP+OHM processing with file upload.
+    Processes audio with both GOP and OHM models.
+
+    Args:
+        wav: Audio file (WAV format preferred)
+        transcript: Expected transcript for GOP scoring
+        language: Language code (default: 'kn' for Kannada)
+
+    Returns:
+        Combined GOP and OHM results
+    """
+    import tempfile
+    from pathlib import Path
+
+    wav_path = None
+    try:
+        # Save uploaded file to temporary location
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir="/tmp") as tmp_wav:
+            content = await wav.read()
+            tmp_wav.write(content)
+            wav_path = tmp_wav.name
+
+        # Process with GOP
+        gop_result = compute_gop(wav_path, transcript)
+
+        # Process with OHM
+        temp_folder = Path(wav_path).parent
+        ohm_rating = predict_ohm_rating(temp_folder, language)
+
+        # Combine results
+        combined_result = {
+            "gop": {
+                "sentence_gop": gop_result.get("sentence_gop"),
+                "perphone_gop": gop_result.get("perphone_gop", []),
+                "latency_ms": gop_result.get("latency_ms"),
+                "error": gop_result.get("error")
+            },
+            "ohm": {
+                "rating": ohm_rating
+            },
+            "input": {
+                "transcript": transcript,
+                "language": language,
+                "filename": wav.filename
+            }
+        }
+
+        # Clean up temporary file
+        os.remove(wav_path)
+
+        return _sanitize_floats_for_json(combined_result)
+
+    except Exception as e:
+        # Clean up on error
+        if wav_path and os.path.exists(wav_path):
+            os.remove(wav_path)
+        return {
+            "error": str(e),
+            "gop": None,
+            "ohm": None
+        }
 
 
 async def send_email(email: EmailSchema):

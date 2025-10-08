@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.md
+.env
+.dockerignore
+Dockerfile
+docker-compose.yml
+gop_work_tmp/
+
+
+

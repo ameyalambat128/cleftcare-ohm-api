@@ -13,11 +13,13 @@ import tempfile
 
 # -------- Helper to run shell commands --------
 def run(cmd, log=None):
-    print(f"[RUN] {cmd}")
-    result = subprocess.run(cmd, shell=True)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    sourced_cmd = f"cd {base_dir} && source {base_dir}/path.sh && {cmd}"
+    print(f"[RUN] {sourced_cmd}")
+    result = subprocess.run(sourced_cmd, shell=True, executable='/bin/bash')
     if result.returncode != 0:
-        print(f"Command failed: {cmd}")
-        raise RuntimeError(f"Command failed: {cmd}")
+        print(f"Command failed: {sourced_cmd}")
+        raise RuntimeError(f"Command failed: {sourced_cmd}")
 
 def compute_gop(wav_path, transcript):
     """
@@ -115,8 +117,10 @@ def compute_gop(wav_path, transcript):
             f"'ark,t:|gzip -c >{ALI}/ali-phone.1.gz'")
 
         # -------- Compute GOP --------
+        # compute-gop expects: <model> <transition-alignments> <phoneme-alignments> <prob-matrix> <gop-wspecifier> <phone-feature-wspecifier>
         run(f"compute-gop --phone-map={LM_DIR}/phone-to-pure-phone.int "
             f"{MODEL_DIR}/am/final.mdl "
+            f"'ark,t:gunzip -c {ALI}/ali.1.gz|' "
             f"'ark,t:gunzip -c {ALI}/ali-phone.1.gz|' "
             f"'ark:{PROBS}/output.1.ark' "
             f"'ark,t:{GOP}/gop.1.txt' "

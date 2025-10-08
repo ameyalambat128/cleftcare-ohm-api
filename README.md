@@ -1,248 +1,326 @@
 # Cleft Care OHM API
 
-## Tech Stack
+Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodness of Pronunciation) models for cleft lip/palate and Kannada speech quality assessment.
 
-- Web Framework: FastAPI
-- Machine Learning: PyTorch, scikit-learn, transformers
-- Data Processing: NumPy, pandas, librosa
-- AWS Integration: S3 with Boto3
-- Audio Processing: audioread, soundfile
+## Quick Start
 
-## Endpoints
+### Development Mode (Recommended for Testing)
 
-**Health Check**
+1. **Setup environment:**
 
-- URL: `/`
-- Method: `GET`
-- Description: Checks the health status of the API.
+   ```bash
+   cp .env.example .env
+   # Edit .env if needed - defaults work for development
+   ```
 
-**Predict OHM Rating (Test)**
+2. **Add your audio files:**
 
-- URL: `/predict-test`
-- Method: `GET`
-- Description: Downloads a test audio file from S3, processes it, and returns the perceptual rating.
+   ```bash
+   # Place test audio files in audios/ or audios/samples/ directory
+   # In development, the API looks in audios/ first, then audios/samples/
+   cp your-audio-files.m4a audios/samples/
+   ```
 
-**OHM Assessment**
+3. **Start the API:**
 
-- URL: `/ohm`
-- Method: `POST`
-- Description: Accepts a POST request with user details and audio file info, downloads the specified audio file from S3, processes it with OHM model, and returns the perceptual rating.
+   ```bash
+   docker-compose --profile dev up
+   ```
 
-**Request Body**
+4. **Test the endpoints:**
 
+   ```bash
+   # Health check
+   curl http://localhost:8080/
+
+   # OHM assessment
+   curl -X POST http://localhost:8080/ohm \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: dev-key-12345" \
+     -d '{"userId": "test", "name": "Test", "communityWorkerName": "Test", "promptNumber": 1, "language": "kn", "uploadFileName": "your-file.m4a", "sendEmail": false}'
+   ```
+
+### Production Mode
+
+For production deployment with AWS S3:
+
+1. **Configure environment:**
+
+   ```bash
+   cp .env.example .env
+   # Set ENVIRONMENT=production and add AWS credentials
+   ```
+
+2. **Deploy:**
+   ```bash
+   docker-compose up cleftcare-api
+   # OR for Cloud Run:
+   docker buildx build --platform linux/amd64 -t cleftcare-ohm-api .
+   ```
+
+## API Endpoints
+
+All endpoints require `X-API-Key` header for authentication.
+
+### Health Check
+
+```bash
+GET /
+```
+Returns API status and version info.
+
+---
+
+### OHM - Hypernasality Assessment
+
+```bash
+POST /ohm
+```
+
+Measures oral hypernasality in speech (rating 1-5, higher = more hypernasal).
+
+**Request:**
 ```json
 {
-  "userId": "string",
-  "name": "string",
-  "communityWorkerName": "string",
+  "userId": "user123",
+  "name": "Patient Name",
+  "communityWorkerName": "Worker Name",
   "promptNumber": 1,
-  "language": "en",
-  "uploadFileName": "string",
-  "sendEmail": true
-}
-```
-
-**Response**
-
-```json
-{
-  "perceptualRating": <rating>
-}
-```
-
-**GOP Assessment**
-
-- URL: `/gop`
-- Method: `POST`
-- Description: Accepts a POST request with audio file info and transcript, downloads the specified audio file from S3, processes it with Kaldi GOP system, and returns pronunciation assessment scores.
-
-**Request Body**
-
-```json
-{
-  "userId": "string",
-  "name": "string",
-  "communityWorkerName": "string",
-  "transcript": "ಪಟ್ಟಿ",
-  "uploadFileName": "string",
-  "sendEmail": true
-}
-```
-
-**Response**
-
-```json
-{
-  "utt_id": "filename",
-  "sentence_gop": -0.234,
-  "perphone_gop": [["p", -0.1], ["a", 0.2], ["t", -0.3]],
-  "latency_ms": 2500
-}
-```
-
-**Batch Sentence Processing**
-
-- URL: `/api/v1/process-sentence`
-- Method: `POST`
-- Description: Process multiple audio files for one sentence - runs GOP on all files, finds the best score, then runs OHM on the best file. Returns comprehensive results in a single request.
-
-**Request Body**
-
-```json
-{
-  "userId": "string",
-  "name": "string",
-  "communityWorkerName": "string",
-  "sentenceId": 1,
-  "transcript": "ಪಟ್ಟಿ",
   "language": "kn",
-  "uploadFileNames": ["file1.m4a", "file2.m4a", "file3.m4a"],
-  "sendEmail": true
+  "uploadFileName": "audio.m4a",
+  "sendEmail": false
 }
 ```
 
-**Response**
-
+**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "sentenceId": 1,
-    "transcript": "ಪಟ್ಟಿ",
-    "totalFiles": 3,
-    "gopResults": [
-      {
-        "filename": "file1.m4a",
-        "utt_id": "file1",
-        "sentence_gop": -0.234,
-        "perphone_gop": [["p", -0.1], ["a", 0.2]],
-        "latency_ms": 2500
-      }
-    ],
-    "bestFile": {
-      "filename": "file2.m4a",
-      "gopScore": -0.123
-    },
-    "ohmRating": 2.45,
-    "errors": null
+    "rating": 2.4356,
+    "userId": "user123",
+    "name": "Patient Name",
+    "communityWorkerName": "Worker Name",
+    "promptNumber": 1,
+    "language": "kn"
   },
   "metadata": {
-    "requestId": "uuid",
-    "processingTime": 12.456,
+    "requestId": "550e8400-e29b-41d4-a716-446655440000",
+    "processingTime": 1.234,
     "timestamp": 1738176080542,
     "error": null
   }
 }
 ```
 
-## Project Structure
+**Rate limit:** 50 requests/minute
 
-The API is now organized into a modular structure:
+---
 
-```
-├── app.py              # Main FastAPI application
-├── endpoints/          # Route handlers
-│   └── batch.py       # Batch processing endpoints
-├── models/            # Pydantic schemas
-│   └── schemas.py     # Request/response models
-├── services/          # Business logic
-│   └── processing.py  # Audio processing services
-└── utils/             # Utilities
-    └── helpers.py     # Helper functions and validation
+### GOP - Pronunciation Assessment
+
+```bash
+POST /gop
 ```
 
-### Docker commands
+Measures pronunciation quality (higher/less negative scores = better pronunciation).
 
-- Build Docker Container
-
-```shell
-docker build -t cleftcare-ohm .
+**Request:**
+```json
+{
+  "userId": "user123",
+  "transcript": "ಪಟ್ಟಿ",
+  "uploadFileName": "audio.m4a"
+}
 ```
 
-- Run Docker Container
-
-```shell
-docker run -p 8080:8080 --name cleftcare-ohm-container cleftcare-ohm
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sentence_gop": -1.0301829,
+    "perphone_gop": [
+      {"phone": "p", "score": -0.523},
+      {"phone": "a", "score": -1.234}
+    ],
+    "latency_ms": 850
+  },
+  "metadata": {
+    "requestId": "550e8400-e29b-41d4-a716-446655440001",
+    "processingTime": 0.850,
+    "timestamp": 1738176081392,
+    "error": null
+  }
+}
 ```
 
-Detached (Runs in Background)
+**Rate limit:** 200 requests/minute
 
-```shell
-docker run -p 8080:8080 --name cleftcare-ohm-container -d cleftcare-ohm
+---
+
+### Batch Processing - Complete Sentence Assessment
+
+```bash
+POST /api/v1/process-sentence
 ```
 
-### Google Cloud Run Deployment
+Processes multiple audio attempts for one sentence:
+1. Runs GOP on all attempts
+2. Selects best pronunciation (highest GOP score)
+3. Runs OHM on best audio
+4. Returns comprehensive results
 
-- Build for linux/amd64, Tag, and Push
-
-```shell
-docker buildx build --platform linux/amd64 -t us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest --push .
+**Request:**
+```json
+{
+  "userId": "user123",
+  "name": "Patient Name",
+  "communityWorkerName": "Worker Name",
+  "transcript": "ಪಟ್ಟಿ",
+  "language": "kn",
+  "uploadFileNames": ["attempt1.m4a", "attempt2.m4a", "attempt3.m4a"],
+  "sendEmail": false
+}
 ```
 
-- Build Docker Container for AMD64
-
-```shell
-docker buildx build --platform linux/amd64 -t cleftcare-ohm .
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "best_gop_score": -0.8680,
+    "best_file": "attempt2.m4a",
+    "ohm_rating": 1.4418,
+    "all_gop_scores": {
+      "attempt1.m4a": -1.234,
+      "attempt2.m4a": -0.8680,
+      "attempt3.m4a": -1.567
+    },
+    "userId": "user123",
+    "name": "Patient Name",
+    "transcript": "ಪಟ್ಟಿ",
+    "language": "kn"
+  },
+  "metadata": {
+    "requestId": "550e8400-e29b-41d4-a716-446655440002",
+    "processingTime": 45.678,
+    "timestamp": 1738176127070,
+    "error": null
+  }
+}
 ```
 
-- Tag Container
+**Typical workflow:** User records 2-5 attempts per sentence → API finds best pronunciation → Returns GOP + OHM scores
+**Processing time:** ~30-60 seconds per sentence (depending on number of attempts)
 
-```shell
-docker tag cleftcare-ohm us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest
+---
+
+### File Upload Endpoints (Development/Testing)
+
+```bash
+POST /api/v1/gop/upload
+```
+Direct file upload for GOP testing (multipart/form-data).
+
+```bash
+POST /api/v1/test/gop-ohm
+```
+Direct file upload for combined GOP+OHM testing (multipart/form-data).
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/test/gop-ohm \
+  -H "X-API-Key: dev-key-12345" \
+  -F "wav=@audio.wav" \
+  -F "transcript=ಪಟ್ಟಿ" \
+  -F "language=kn"
 ```
 
-- Push Tagged Container to Artifact Registry
+---
 
-```shell
-docker push us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest
+### Response Format
+
+All endpoints return standardized responses:
+
+```json
+{
+  "success": true,           // Request succeeded
+  "data": { ... },          // Endpoint-specific results
+  "metadata": {
+    "requestId": "uuid",    // Unique request identifier
+    "processingTime": 2.45, // Seconds
+    "timestamp": 1738176080542,
+    "error": null           // Error message if failed
+  }
+}
 ```
 
-## GOP System Requirements
+## Development vs Production
 
-The `/gop` endpoint requires Kaldi tooling and Kannada models to function properly:
+### Development Mode
 
-- **Kaldi binaries**: `steps/`, `utils/`, `local/` directories with speech processing scripts
-- **Configuration**: `conf/mfcc_hires.conf` for MFCC feature extraction
-- **Models**:
-  - `models/vosk_kannada_model/` - Pre-trained Kannada acoustic model
-  - `models/LM_2gram_aiish/` - 2-gram language model for Kannada
-- **Utilities**: `make_text_phone.pl` for phonetic text conversion
+- **Audio files**: Local files in `audios/` directory (falls back to `audios/samples/`)
+- **Authentication**: Simple API key (`dev-key-12345`)
+- **Setup**: No AWS credentials needed
+- **Usage**: `docker-compose --profile dev up`
+
+### Production Mode
+
+- **Audio files**: Downloaded from AWS S3
+- **Authentication**: Secure API key via environment
+- **Setup**: Requires AWS credentials and S3 bucket
+- **Usage**: `docker-compose up cleftcare-api`
 
 ## Environment Variables
 
-| Variable                | Description                 | Required |
-| ----------------------- | --------------------------- | -------- |
-| `AWS_ACCESS_KEY_ID`     | S3 access key               | Yes      |
-| `AWS_SECRET_ACCESS_KEY` | S3 secret key               | Yes      |
-| `AWS_DEFAULT_REGION`    | S3 region                   | Yes      |
-| `MAILJET_API_KEY`       | Email service key           | Optional |
-| `MAILJET_API_SECRET`    | Email service secret        | Optional |
-| `EMAIL_FROM`            | Sender email                | Optional |
-| `EMAIL_FROM_NAME`       | Sender name                 | Optional |
-| `API_KEY`               | Authentication API key      | Yes      |
-| `PORT`                  | Server port (default: 8080) | No       |
+| Variable                | Description        | Development     | Production   |
+| ----------------------- | ------------------ | --------------- | ------------ |
+| `ENVIRONMENT`           | Mode setting       | `development`   | `production` |
+| `API_KEY`               | Authentication key | `dev-key-12345` | `secure-key` |
+| `AWS_ACCESS_KEY_ID`     | S3 access key      | Not needed      | Required     |
+| `AWS_SECRET_ACCESS_KEY` | S3 secret key      | Not needed      | Required     |
+| `AWS_DEFAULT_REGION`    | S3 region          | Not needed      | Required     |
 
-## Deployment Notes
+## Docker Commands
 
-- Current OHM-only image (this README): works with the provided `Dockerfile` and Cloud Run.
-- GOP requires Kaldi binaries and support scripts (`steps/`, `utils/`, `local/`, and `conf/mfcc_hires.conf`) plus Kannada models in `models/`.
-- Recommended approach for cost and cold starts:
-  - Keep OHM as-is on Cloud Run (small image, quick cold start).
-  - Deploy GOP as a separate Cloud Run service based on a Kaldi image (e.g., `kaldiasr/kaldi`) and copy required scripts/configs into the image. Point GOP code to those paths.
+### Development
 
-Apple Silicon (M‑series) note for Cloud Run: build for `linux/amd64` as shown above using `docker buildx`.
+```bash
+# Quick start for testing
+docker-compose --profile dev up
 
-## Models
-
-- OHM models: `models/*.pth`, regressors `*.pkl`, normalization `Mean.npy`, `Std.npy`.
-- GOP models: `models/vosk_kannada_model/` (acoustic), `models/LM_2gram_aiish/` (language) plus `make_text_phone.pl` and Kaldi support scripts.
-
-## Health Check
-
-- URL: `/`
-- Method: `GET`
-- Response:
-
-```json
-{ "status": "ok" }
+# Test Kaldi setup
+docker-compose --profile test up test
 ```
+
+### Production
+
+```bash
+# Local production testing
+docker-compose up cleftcare-api
+
+# Cloud Run deployment
+docker buildx build --platform linux/amd64 -t cleftcare-ohm-api .
+docker tag cleftcare-ohm-api us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest
+docker push us-east1-docker.pkg.dev/cleftcare/cleftcare-ohm/cleftcare-ohm:latest
+```
+
+## Architecture
+
+```
+├── app.py              # Main FastAPI application
+├── audios/             # Local audio files (development)
+├── endpoints/          # API route handlers
+├── models/             # Pydantic schemas + ML models
+├── services/           # Business logic & processing
+└── utils/              # Helper functions
+```
+
+## Tech Stack
+
+- **Framework**: FastAPI with authentication & rate limiting
+- **ML Models**: PyTorch (OHM), Kaldi (GOP)
+- **Audio**: FFmpeg conversion, librosa processing
+- **Storage**: AWS S3 (production) or local files (development)
+- **Container**: Docker with multi-stage build for Kaldi integration

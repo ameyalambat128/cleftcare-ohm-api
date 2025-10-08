@@ -1,0 +1,49 @@
+services:
+  cleftcare-api:
+    platform: linux/amd64
+    build: .
+    container_name: cleftcare-ohm-api
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KALDI_ROOT=/opt/kaldi
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - API_KEY=${API_KEY:-your-api-key-here}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    command: ["python", "app.py"]
+    profiles:
+      - prod
+
+  # Development mode with local audio files
+  dev:
+    platform: linux/amd64
+    build: .
+    container_name: cleftcare-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KALDI_ROOT=/opt/kaldi
+      - ENVIRONMENT=development
+      - API_KEY=dev-key-12345
+    volumes:
+      - ./audios:/app/audios:ro
+      - ./logs:/app/logs
+    command: ["python", "app.py"]
+    profiles:
+      - dev
+
+  # Test Kaldi setup
+  test:
+    platform: linux/amd64
+    build: .
+    container_name: cleftcare-test
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KALDI_ROOT=/opt/kaldi
+    command: ["./test_kaldi_setup.sh"]
+    profiles:
+      - test

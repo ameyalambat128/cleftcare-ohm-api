@@ -2,7 +2,8 @@ import os
 import re
 import uuid
 import time
-from typing import Dict
+import math
+from typing import Any, Dict
 
 
 def generate_request_id() -> str:
@@ -33,10 +34,11 @@ def validate_upload_filename(filename: str) -> str:
 
 
 def create_response(success: bool, data: dict, request_id: str, processing_time: float, error_message: str = None) -> dict:
-    """Create standardized API response"""
+    """Create standardized API response with safe JSON values (no NaN/Inf)."""
+    safe_data = sanitize_json_floats(data) if success else {}
     return {
         "success": success,
-        "data": data if success else {},
+        "data": safe_data,
         "metadata": {
             "requestId": request_id,
             "processingTime": round(processing_time, 3),
@@ -59,5 +61,21 @@ def update_status(user_id: str, request_id: str, status: str, endpoint: str, dat
         "status": status,  # "processing", "completed", "failed"
         "endpoint": endpoint,
         "timestamp": int(time.time() * 1000),
-        "data": data or {}
+        "data": sanitize_json_floats(data) if data else {}
     })
+
+
+def sanitize_json_floats(obj: Any) -> Any:
+    """Recursively replace NaN/Inf floats with None and convert tuples to lists.
+
+    This ensures the payload is JSON-serializable under strict encoders.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: sanitize_json_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_json_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [sanitize_json_floats(v) for v in obj]
+    return obj

@@ -1,11 +1,10 @@
-export KALDI_ROOT=/home/shruthi/kaldi
-export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$PWD:$PATH
-[ ! -f $KALDI_ROOT/tools/config/common_path.sh ] && echo >&2 "The standard file $KALDI_ROOT/tools/config/common_path.sh is not present -> Exit!" && exit 1
-. $KALDI_ROOT/tools/config/common_path.sh
+# Container-friendly paths for Kaldi setup
+export KALDI_ROOT=/opt/kaldi
+export PATH=$PWD/utils/:$KALDI_ROOT/src/bin:$KALDI_ROOT/tools/openfst/bin:$KALDI_ROOT/src/fstbin:$KALDI_ROOT/src/gmmbin:$KALDI_ROOT/src/nnet3bin:$KALDI_ROOT/src/featbin:$KALDI_ROOT/src/online2bin:$KALDI_ROOT/src/ivectorbin:$PWD:$PATH
 export LC_ALL=C
 
 # We use this both in the (optional) LM training and the G2P-related scripts
-PYTHON='python2.7'
+PYTHON='python3'
 
 ### Below are the paths used by the optional parts of the recipe
 
@@ -26,3 +25,6 @@ sequitur_path="$(dirname $sequitur)/lib/$PYTHON/site-packages"
 # Directory under which the LM training corpus should be extracted
 LM_CORPUS_ROOT=./lm-corpus
 export PYTHONUNBUFFERED=1
+
+# Ensure we can find our local scripts
+export PATH=$PWD/local:$PATH

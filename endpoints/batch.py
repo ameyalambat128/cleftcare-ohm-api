@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 
 from models.schemas import BatchProcessRequest
 from services.processing import AudioProcessor
-from utils.helpers import generate_request_id, create_response, update_status, validate_upload_filename
+from api_utils.helpers import generate_request_id, create_response, update_status, validate_upload_filename
 
 
 # Initialize router and limiter
