@@ -42,19 +42,8 @@ Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodne
 
 ### Production Mode
 
-For production deployment with AWS S3:
-
-1. **Configure environment:**
-
+1. **Deploy:**
    ```bash
-   cp .env.example .env
-   # Set ENVIRONMENT=production and add AWS credentials
-   ```
-
-2. **Deploy:**
-   ```bash
-   docker-compose up cleftcare-api
-   # OR for Cloud Run:
    docker buildx build --platform linux/amd64 -t cleftcare-ohm-api .
    ```
 
@@ -67,6 +56,7 @@ All endpoints require `X-API-Key` header for authentication.
 ```bash
 GET /
 ```
+
 Returns API status and version info.
 
 ---
@@ -80,6 +70,7 @@ POST /ohm
 Measures oral hypernasality in speech (rating 1-5, higher = more hypernasal).
 
 **Request:**
+
 ```json
 {
   "userId": "user123",
@@ -93,6 +84,7 @@ Measures oral hypernasality in speech (rating 1-5, higher = more hypernasal).
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -126,6 +118,7 @@ POST /gop
 Measures pronunciation quality (higher/less negative scores = better pronunciation).
 
 **Request:**
+
 ```json
 {
   "userId": "user123",
@@ -135,20 +128,21 @@ Measures pronunciation quality (higher/less negative scores = better pronunciati
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
   "data": {
     "sentence_gop": -1.0301829,
     "perphone_gop": [
-      {"phone": "p", "score": -0.523},
-      {"phone": "a", "score": -1.234}
+      { "phone": "p", "score": -0.523 },
+      { "phone": "a", "score": -1.234 }
     ],
     "latency_ms": 850
   },
   "metadata": {
     "requestId": "550e8400-e29b-41d4-a716-446655440001",
-    "processingTime": 0.850,
+    "processingTime": 0.85,
     "timestamp": 1738176081392,
     "error": null
   }
@@ -166,12 +160,14 @@ POST /api/v1/process-sentence
 ```
 
 Processes multiple audio attempts for one sentence:
+
 1. Runs GOP on all attempts
 2. Selects best pronunciation (highest GOP score)
 3. Runs OHM on best audio
 4. Returns comprehensive results
 
 **Request:**
+
 ```json
 {
   "userId": "user123",
@@ -185,16 +181,17 @@ Processes multiple audio attempts for one sentence:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
   "data": {
-    "best_gop_score": -0.8680,
+    "best_gop_score": -0.868,
     "best_file": "attempt2.m4a",
     "ohm_rating": 1.4418,
     "all_gop_scores": {
       "attempt1.m4a": -1.234,
-      "attempt2.m4a": -0.8680,
+      "attempt2.m4a": -0.868,
       "attempt3.m4a": -1.567
     },
     "userId": "user123",
@@ -221,14 +218,17 @@ Processes multiple audio attempts for one sentence:
 ```bash
 POST /api/v1/gop/upload
 ```
+
 Direct file upload for GOP testing (multipart/form-data).
 
 ```bash
 POST /api/v1/test/gop-ohm
 ```
+
 Direct file upload for combined GOP+OHM testing (multipart/form-data).
 
 **Example:**
+
 ```bash
 curl -X POST http://localhost:8080/api/v1/test/gop-ohm \
   -H "X-API-Key: dev-key-12345" \

@@ -593,8 +593,12 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
         raise HTTPException(status_code=500, detail=error_response)
 
 
-# Add new batch processing endpoints
-app.include_router(batch_router, prefix="/api/v1")
+# Add new batch processing endpoints with API key requirement
+app.include_router(
+    batch_router,
+    prefix="/api/v1",
+    dependencies=[Depends(verify_api_key)]
+)
 
 
 if __name__ == "__main__":
