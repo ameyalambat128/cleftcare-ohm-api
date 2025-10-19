@@ -13,6 +13,8 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
     command: ["python", "app.py"]
     profiles:
       - prod
@@ -29,6 +31,8 @@ services:
       - KALDI_ROOT=/opt/kaldi
       - ENVIRONMENT=development
       - API_KEY=dev-key-12345
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
     volumes:
       - ./audios:/app/audios:ro
       - ./logs:/app/logs

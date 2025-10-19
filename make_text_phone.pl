@@ -1,16 +1,32 @@
 #!/usr/bin/env perl
 # make_text_phone.pl
-# Usage: make_text_phone.pl text lexicon.txt > text-phone
+# Usage: make_text_phone.pl text lexicon1.txt [lexicon2.txt ...] > text-phone
 
-my ($text, $lexicon) = @ARGV;
-open(LX, "<", $lexicon) or die "Could not open $lexicon\n";
+use strict;
+use warnings;
+
+my ($text, @lexicons) = @ARGV;
+@lexicons >= 1 or die "Usage: make_text_phone.pl text lexicon1.txt [lexicon2.txt ...] > text-phone\n";
+
 my %lex = ();
-while (<LX>) {
-    chomp;
-    my ($word, @phones) = split;
-    $lex{$word} = join(" ", @phones);
+foreach my $lexicon (@lexicons) {
+    open(my $lx_fh, "<", $lexicon) or die "Could not open $lexicon\n";
+    while (<$lx_fh>) {
+        chomp;
+        next if $_ =~ /^\s*$/;
+        my @parts = split;
+        next if @parts < 2;
+
+        my $word = shift @parts;
+        if (@parts >= 1 && $parts[0] eq $word) {
+            shift @parts;
+        }
+
+        next if @parts == 0;
+        $lex{$word} //= join(" ", @parts);
+    }
+    close($lx_fh);
 }
-close(LX);
 
 open(TX, "<", $text) or die "Could not open $text\n";
 while (<TX>) {
@@ -21,9 +37,9 @@ while (<TX>) {
         if (exists $lex{$words[$i]}) {
             print "$wid $lex{$words[$i]}\n";
         } else {
-            warn "Word $words[$i] not in lexicon!\n";
+            warn "Word $words[$i] not in provided lexicons, substituting silence.\n";
+            print "$wid sil_S\n";
         }
     }
 }
 close(TX);
-

@@ -274,13 +274,15 @@ All endpoints return standardized responses:
 
 ## Environment Variables
 
-| Variable                | Description        | Development     | Production   |
-| ----------------------- | ------------------ | --------------- | ------------ |
-| `ENVIRONMENT`           | Mode setting       | `development`   | `production` |
-| `API_KEY`               | Authentication key | `dev-key-12345` | `secure-key` |
-| `AWS_ACCESS_KEY_ID`     | S3 access key      | Not needed      | Required     |
-| `AWS_SECRET_ACCESS_KEY` | S3 secret key      | Not needed      | Required     |
-| `AWS_DEFAULT_REGION`    | S3 region          | Not needed      | Required     |
+| Variable                    | Description               | Development     | Production   |
+| --------------------------- | ------------------------- | --------------- | ------------ |
+| `ENVIRONMENT`               | Mode setting              | `development`   | `production` |
+| `API_KEY`                   | Authentication key        | `dev-key-12345` | `secure-key` |
+| `AWS_ACCESS_KEY_ID`         | S3 access key             | Not needed      | Required     |
+| `AWS_SECRET_ACCESS_KEY`     | S3 secret key             | Not needed      | Required     |
+| `AWS_DEFAULT_REGION`        | S3 region                 | Not needed      | Required     |
+| `SUPABASE_URL`              | Supabase project URL      | Optional        | Required     |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Optional        | Required     |
 
 ## Docker Commands
 

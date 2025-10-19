@@ -5,6 +5,7 @@ Modified to use relative paths and work in containerized environments.
 """
 
 import os
+import re
 import sys
 import subprocess
 import time
@@ -20,6 +21,17 @@ def run(cmd, log=None):
     if result.returncode != 0:
         print(f"Command failed: {sourced_cmd}")
         raise RuntimeError(f"Command failed: {sourced_cmd}")
+
+
+_NON_WORD_PATTERN = re.compile(r"[^0-9a-z\u0C80-\u0CFF'\s]")
+
+
+def _normalize_transcript(transcript: str) -> str:
+    """Lowercase and strip unsupported symbols from the transcript."""
+    if transcript is None:
+        return ""
+    cleaned = _NON_WORD_PATTERN.sub(" ", transcript.lower())
+    return " ".join(cleaned.split())
 
 def compute_gop(wav_path, transcript):
     """
@@ -40,6 +52,7 @@ def compute_gop(wav_path, transcript):
     LANG_DIR = os.path.join(MODEL_DIR, "graph")
     IVECTOR_DIR = os.path.join(MODEL_DIR, "ivector")
     LM_DIR = os.path.join(base_dir, "models", "LM_2gram_aiish")
+    LEXICON_SOURCES = f"{LM_DIR}/lexicon.txt {LANG_DIR}/phones/align_lexicon.txt"
 
     WORKDIR = os.path.join(base_dir, "gop_work_tmp")
     nj = 1
@@ -63,8 +76,11 @@ def compute_gop(wav_path, transcript):
         # -------- Prepare Kaldi data dir --------
         with open(os.path.join(DATA, "wav.scp"), "w") as f:
             f.write(f"{UTT_ID} {wav_path}\n")
+        normalized_transcript = _normalize_transcript(transcript)
+        if not normalized_transcript:
+            raise ValueError("Transcript is empty after normalization.")
         with open(os.path.join(DATA, "text"), "w") as f:
-            f.write(f"{UTT_ID} {transcript}\n")
+            f.write(f"{UTT_ID} {normalized_transcript}\n")
         with open(os.path.join(DATA, "utt2spk"), "w") as f:
             f.write(f"{UTT_ID} {UTT_ID}\n")
 
@@ -85,9 +101,9 @@ def compute_gop(wav_path, transcript):
             f"{DATA} {MODEL_DIR}/am {PROBS}")
 
         # -------- Prepare phone-level transcript --------
-        run(f"make_text_phone.pl {DATA}/text {LM_DIR}/lexicon.txt > {DATA}/text-phone")
+        run(f"make_text_phone.pl {DATA}/text {LEXICON_SOURCES} > {DATA}/text-phone")
         run(f"utils/split_data.sh {DATA} {nj}")
-        run(f"utils/sym2int.pl -f 2- {LM_DIR}/words.txt "
+        run(f"utils/sym2int.pl --map-oov '#0' -f 2- {LM_DIR}/words.txt "
             f"{DATA}/split1/1/text > {DATA}/split1/1/text.int")
         run(f"utils/sym2int.pl -f 2- {LM_DIR}/phones.txt "
             f"{DATA}/text-phone > {DATA}/text-phone.int")

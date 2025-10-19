@@ -8,6 +8,7 @@ from slowapi.util import get_remote_address
 from models.schemas import BatchProcessRequest
 from services.processing import AudioProcessor
 from api_utils.helpers import generate_request_id, create_response, update_status, validate_upload_filename
+from services.datastore import SupabaseSync
 
 
 # Initialize router and limiter
@@ -65,6 +66,7 @@ async def process_sentence_batch(
             region_name=os.getenv('AWS_DEFAULT_REGION')
         )
         processor = AudioProcessor(s3_client, 'cleftcare-test')
+        supabase_sync = SupabaseSync()
 
         # Process all files in the sentence
         batch_results = processor.process_sentence_batch(
@@ -99,6 +101,22 @@ async def process_sentence_batch(
 
         # Update status to completed
         update_status(user_id, request_id, "completed", "batch-sentence", response_data)
+
+        supabase_sync.upsert_user_audio_file(
+            user_id=user_id,
+            prompt=batch_request.transcript,
+            prompt_number=sentence_id,
+            s3_key=batch_results["best_gop_file"],
+            language=batch_request.language,
+            gop_sentence_score=batch_results["best_gop_score"],
+            ohm_score=batch_results.get("ohm_rating"),
+            all_gop_scores={
+                "gopResults": batch_results["gop_results"],
+            },
+            per_phone_gop=None,
+            request_id=request_id,
+            processing_time=processing_time
+        )
 
         return create_response(
             success=True,

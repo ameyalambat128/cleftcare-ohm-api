@@ -26,6 +26,7 @@ from gop_module import compute_gop
 # Import new modular components
 from models.schemas import PredictRequest, GOPRequest, EmailSchema, APIResponse
 from services.processing import AudioProcessor
+from services.datastore import SupabaseSync
 from api_utils.helpers import generate_request_id, validate_upload_filename, create_response, update_status, status_tracking
 from endpoints.batch import router as batch_router
 
@@ -466,6 +467,20 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
         # Update status to completed
         update_status(user_id, request_id, "completed", "ohm", response_data)
 
+        SupabaseSync().upsert_user_audio_file(
+            user_id=user_id,
+            prompt=name,
+            prompt_number=prompt_number,
+            s3_key=upload_file_name,
+            language=language,
+            gop_sentence_score=None,
+            ohm_score=perceptual_rating,
+            all_gop_scores=None,
+            per_phone_gop=None,
+            request_id=request_id,
+            processing_time=processing_time,
+        )
+
         return create_response(
             success=True,
             data=response_data,
@@ -568,6 +583,20 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
 
         # Update status to completed
         update_status(user_id, request_id, "completed", "gop", gop_result)
+
+        SupabaseSync().upsert_user_audio_file(
+            user_id=user_id,
+            prompt=transcript,
+            prompt_number=None,
+            s3_key=upload_file_name,
+            language=None,
+            gop_sentence_score=gop_result.get("sentence_gop"),
+            ohm_score=None,
+            all_gop_scores=gop_result,
+            per_phone_gop=gop_result.get("perphone_gop"),
+            request_id=request_id,
+            processing_time=processing_time,
+        )
 
         return create_response(
             success=True,
