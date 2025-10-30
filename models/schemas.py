@@ -36,6 +36,7 @@ class BatchProcessRequest(BaseModel):
     language: str
     uploadFileNames: List[str]  # Multiple audio files for one sentence
     sendEmail: bool
+    callbackUrl: Optional[str] = None  # Optional callback URL for async processing
 
 
 # Standardized response models
