@@ -1,6 +1,8 @@
 import time
 import os
+import math
 import boto3
+from typing import Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request, Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -21,7 +23,7 @@ def _format_callback_payload(
     user_id: str,
     sentence_id: int,
     transcript: str,
-    language: str,
+    language: Optional[str],
     batch_results: dict,
     request_id: str,
     processing_time_ms: int,
@@ -51,6 +53,18 @@ def _format_callback_payload(
                     # Already formatted
                     gop_results.append(item)
 
+    # Handle None values for bestFile.gopScore - use 0.0 if None or NaN
+    best_gop_score = batch_results.get("best_gop_score")
+    if best_gop_score is None:
+        best_gop_score = 0.0
+    else:
+        try:
+            best_gop_score = float(best_gop_score)
+            if math.isnan(best_gop_score) or math.isinf(best_gop_score):
+                best_gop_score = 0.0
+        except (TypeError, ValueError):
+            best_gop_score = 0.0
+
     return {
         "userId": user_id,
         "sentenceId": str(sentence_id),
@@ -58,7 +72,7 @@ def _format_callback_payload(
         "language": language or "unknown",
         "bestFile": {
             "filename": batch_results.get("best_gop_file") or "unknown",
-            "gopScore": batch_results.get("best_gop_score") or 0.0,
+            "gopScore": best_gop_score,
         },
         "ohmRating": batch_results.get("ohm_rating"),
         "gopResults": gop_results,
@@ -92,6 +106,12 @@ def _process_and_callback(
             },
         )
 
+        # Initialize Supabase sync early
+        supabase_sync = SupabaseSync()
+
+        # Placeholder already saved synchronously before 202 response
+        # This is just for updating with actual results
+
         # Initialize processor with S3 client
         s3_client = boto3.client(
             "s3",
@@ -100,7 +120,6 @@ def _process_and_callback(
             region_name=os.getenv("AWS_DEFAULT_REGION"),
         )
         processor = AudioProcessor(s3_client, "cleftcare-test")
-        supabase_sync = SupabaseSync()
 
         # Process all files in the sentence
         batch_results = processor.process_sentence_batch(
@@ -170,6 +189,25 @@ def _process_and_callback(
             user_id, request_id, "failed", "batch-sentence", {"error": str(e)}
         )
 
+        # Update placeholder record in Supabase with error info
+        try:
+            supabase_sync = SupabaseSync()
+            supabase_sync.upsert_user_audio_file(
+                user_id=user_id,
+                prompt=batch_request.transcript,
+                prompt_number=batch_request.sentenceId,
+                s3_key=None,  # No file processed
+                language=batch_request.language,
+                gop_sentence_score=None,
+                ohm_score=None,
+                all_gop_scores={"error": str(e)},  # Store error info
+                per_phone_gop=None,
+                request_id=request_id,
+                processing_time=processing_time,
+            )
+        except Exception as supabase_error:
+            print(f"[{request_id}] Failed to update Supabase on error: {str(supabase_error)}")
+
         # Still try to send callback with error info
         try:
             error_callback_payload = {
@@ -237,6 +275,28 @@ async def process_sentence_batch(
 
     # If callbackUrl is provided, process asynchronously
     if callback_url:
+        # Save placeholder record IMMEDIATELY (before background task)
+        # This ensures average calculations can find the record right away
+        try:
+            supabase_sync = SupabaseSync()
+            print(f"[{request_id}] Saving placeholder record to Supabase BEFORE returning 202")
+            supabase_sync.upsert_user_audio_file(
+                user_id=user_id,
+                prompt=transcript,
+                prompt_number=sentence_id,
+                s3_key=None,  # Will be updated when best file is found
+                language=batch_request.language,
+                gop_sentence_score=None,  # Placeholder - will be updated
+                ohm_score=None,  # Placeholder - will be updated
+                all_gop_scores=None,  # Placeholder - will be updated
+                per_phone_gop=None,
+                request_id=request_id,
+                processing_time=0.0,  # Placeholder - will be updated with actual time
+            )
+        except Exception as placeholder_error:
+            print(f"[{request_id}] Warning: Failed to save placeholder: {placeholder_error}")
+            # Continue anyway - background task will try again
+
         # Add background task for processing
         background_tasks.add_task(
             _process_and_callback,

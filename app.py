@@ -55,7 +55,7 @@ app.add_middleware(
 audio_processor = None
 
 # Authentication middleware
-def verify_api_key(x_api_key: str = Header(None)) -> str:
+def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> str:
     """Verify API key from request headers"""
     expected_api_key = os.getenv('API_KEY')
 
