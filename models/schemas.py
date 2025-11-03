@@ -29,13 +29,14 @@ class EmailSchema(BaseModel):
 # New schemas for batch processing
 class BatchProcessRequest(BaseModel):
     userId: str
-    name: str
-    communityWorkerName: str
-    sentenceId: int
+    name: Optional[str] = None  # Optional: CleftCare API may omit
+    communityWorkerName: Optional[str] = None  # Optional: CleftCare API may omit
+    sentenceId: int  # Accepts int (Pydantic coerces string to int automatically)
     transcript: str
-    language: str
+    language: Optional[str] = None  # Optional: defaults to "unknown" in callback
     uploadFileNames: List[str]  # Multiple audio files for one sentence
     sendEmail: bool
+    callbackUrl: Optional[str] = None  # Optional callback URL for async processing
 
 
 # Standardized response models

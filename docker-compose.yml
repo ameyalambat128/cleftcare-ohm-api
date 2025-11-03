@@ -30,7 +30,7 @@ services:
       - PYTHONUNBUFFERED=1
       - KALDI_ROOT=/opt/kaldi
       - ENVIRONMENT=development
-      - API_KEY=dev-key-12345
+      - API_KEY=${API_KEY:-your-api-key-here}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
     volumes:

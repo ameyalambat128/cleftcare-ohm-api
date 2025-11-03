@@ -1,6 +1,6 @@
 # Cleft Care OHM API
 
-Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodness of Pronunciation) models for cleft lip/palate and Kannada speech quality assessment.
+Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodness of Pronunciation) models for cleft lip/palate and Kannada speech quality assessment. Results can be persisted to Supabase when configured.
 
 ## Quick Start
 
@@ -21,13 +21,24 @@ Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodne
    cp your-audio-files.m4a audios/samples/
    ```
 
-3. **Start the API:**
+3. **Configure Supabase (optional in development, required for persistence):**
+
+   Update `.env` with your Supabase project settings if you want local runs to write to the hosted database:
+
+   ```bash
+   SUPABASE_URL="https://your-project.supabase.co"
+   SUPABASE_SERVICE_ROLE_KEY="service-role-key"
+   ```
+
+   If these variables are omitted, Supabase writes are skipped and a notice is logged.
+
+4. **Start the API:**
 
    ```bash
    docker-compose --profile dev up
    ```
 
-4. **Test the endpoints:**
+5. **Test the endpoints:**
 
    ```bash
    # Health check
@@ -274,15 +285,38 @@ All endpoints return standardized responses:
 
 ## Environment Variables
 
-| Variable                    | Description               | Development     | Production   |
-| --------------------------- | ------------------------- | --------------- | ------------ |
-| `ENVIRONMENT`               | Mode setting              | `development`   | `production` |
-| `API_KEY`                   | Authentication key        | `dev-key-12345` | `secure-key` |
-| `AWS_ACCESS_KEY_ID`         | S3 access key             | Not needed      | Required     |
-| `AWS_SECRET_ACCESS_KEY`     | S3 secret key             | Not needed      | Required     |
-| `AWS_DEFAULT_REGION`        | S3 region                 | Not needed      | Required     |
-| `SUPABASE_URL`              | Supabase project URL      | Optional        | Required     |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Optional        | Required     |
+| Variable                    | Description               | Development            | Production       |
+| --------------------------- | ------------------------- | ---------------------- | ---------------- |
+| `ENVIRONMENT`               | Mode setting              | `development`          | `production`     |
+| `API_KEY`                   | Authentication key        | `.env → API_KEY`       | `.env → API_KEY` |
+| `AWS_ACCESS_KEY_ID`         | S3 access key             | Not needed             | Required         |
+| `AWS_SECRET_ACCESS_KEY`     | S3 secret key             | Not needed             | Required         |
+| `AWS_DEFAULT_REGION`        | S3 region                 | Not needed             | Required         |
+| `SUPABASE_URL`              | Supabase project URL      | Optional (enable sync) | Required         |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Optional (enable sync) | Required         |
+
+## Supabase Persistence
+
+When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, processed GOP/OHM results are upserted into the Supabase `UserAudioFile` table. The workflow:
+
+- Saves a placeholder record before returning `202 Accepted` when a `callbackUrl` is provided, preventing race conditions in downstream analytics
+- Updates the same record after background processing completes with GOP/OHM scores, per-phone GOP details, and processing time
+- Sanitizes all numeric values before writing to avoid `PGRST102` (`Empty or invalid json`) errors from Supabase
+
+### Verifying writes
+
+```bash
+docker-compose --profile prod logs cleftcare-ohm-api | grep Supabase
+```
+
+Successful runs log messages similar to:
+
+- `Saving placeholder record to Supabase BEFORE returning 202`
+- `Supabase UserAudioFile upserted for request <request-id>`
+
+If the client is not configured, you will see `Supabase configuration missing; skipping Supabase client setup.`
+
+For full data flow details see `docs/integrations/ohm-integration.md`.
 
 ## Docker Commands
 
