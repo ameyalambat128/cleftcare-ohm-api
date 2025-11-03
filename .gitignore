@@ -1,4 +1,11 @@
 # Local Unwanted Files
+gop_work_tmp/
+audios/samples/*.wav
+
+# Kaldi directories (extracted from Docker for local dev)
+steps/
+utils/
+!api_utils/
 
 
 # Byte-compiled / optimized / DLL files
