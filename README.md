@@ -2,15 +2,15 @@
 
 Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodness of Pronunciation) models for cleft lip/palate and Kannada speech quality assessment. Results can be persisted to Supabase when configured.
 
-## Quick Start
-
-### Development Mode (Recommended for Testing)
+## Development (Local Testing with Sample Audio Files)
 
 1. **Setup environment:**
 
    ```bash
+   # If present:
    cp .env.example .env
-   # Edit .env if needed - defaults work for development
+   # Or create .env with at least:
+   echo 'API_KEY=your-api-key-here' >> .env
    ```
 
 2. **Add your audio files:**
@@ -41,17 +41,88 @@ Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodne
 5. **Test the endpoints:**
 
    ```bash
+   # Convenience: export your API key to match .env
+   export API_KEY=your-api-key-here
+
    # Health check
-   curl http://localhost:8080/
+   curl -H "X-API-Key: $API_KEY" http://localhost:8080/
 
    # OHM assessment
    curl -X POST http://localhost:8080/ohm \
      -H "Content-Type: application/json" \
-     -H "X-API-Key: dev-key-12345" \
+     -H "X-API-Key: $API_KEY" \
      -d '{"userId": "test", "name": "Test", "communityWorkerName": "Test", "promptNumber": 1, "language": "kn", "uploadFileName": "your-file.m4a", "sendEmail": false}'
    ```
 
-### Production Mode
+6. **Local sample testing (ready-to-run examples):**
+
+   ```bash
+   # List available sample files
+   ls -1 audios/samples
+
+   # Test OHM on a sample file that exists in audios/samples/
+   curl -X POST http://localhost:8080/ohm \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: $API_KEY" \
+     -d '{
+       "userId": "local-user",
+       "name": "Local Test",
+       "communityWorkerName": "Local Worker",
+       "promptNumber": 1,
+       "language": "kn",
+       "uploadFileName": "sample1.m4a",
+       "sendEmail": false
+     }'
+
+   # Test GOP on the same sample file
+   curl -X POST http://localhost:8080/gop \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: $API_KEY" \
+     -d '{
+       "userId": "local-user",
+       "name": "Local Test",
+       "communityWorkerName": "Local Worker",
+       "transcript": "ಪಟ್ಟಿ",
+       "uploadFileName": "sample1.m4a",
+       "sendEmail": false
+     }'
+
+   # Test Batch sentence processing using multiple files in audios/samples/
+   curl -X POST http://localhost:8080/api/v1/process-sentence \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: $API_KEY" \
+     -d '{
+       "userId": "local-user",
+       "name": "Local Test",
+       "communityWorkerName": "Local Worker",
+       "sentenceId": 1,
+       "transcript": "ಪಟ್ಟಿ",
+       "language": "kn",
+       "uploadFileNames": ["sample1.m4a", "sample2.m4a"],
+       "sendEmail": false
+     }'
+   ```
+
+   Notes:
+
+   - In development, the API reads from `audios/` and falls back to `audios/samples/`.
+   - Filenames must be flat (no slashes) and match actual files in those folders.
+   - Supported extensions: `.m4a`, `.wav`, `.mp3`, `.flac`.
+
+## Production (S3 + Supabase Persistence)
+
+Requirements:
+
+- API key via environment: `API_KEY`
+- AWS credentials: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`
+- S3 bucket containing audio files; requests use S3 keys as `uploadFileName(s)`
+- Supabase configuration (required): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+
+Usage:
+
+```bash
+docker-compose up cleftcare-api
+```
 
 1. **Deploy:**
    ```bash
@@ -61,6 +132,14 @@ Speech assessment API combining OHM (Oral Hypernasality Measure) and GOP (Goodne
 ## API Endpoints
 
 All endpoints require `X-API-Key` header for authentication.
+
+### Status (in-flight processing)
+
+```bash
+GET /status/{userId}
+```
+
+Returns background processing status records for a user.
 
 ### Health Check
 
@@ -133,8 +212,11 @@ Measures pronunciation quality (higher/less negative scores = better pronunciati
 ```json
 {
   "userId": "user123",
+  "name": "Patient Name",
+  "communityWorkerName": "Worker Name",
   "transcript": "ಪಟ್ಟಿ",
-  "uploadFileName": "audio.m4a"
+  "uploadFileName": "audio.m4a",
+  "sendEmail": false
 }
 ```
 
@@ -184,10 +266,12 @@ Processes multiple audio attempts for one sentence:
   "userId": "user123",
   "name": "Patient Name",
   "communityWorkerName": "Worker Name",
+  "sentenceId": 1,
   "transcript": "ಪಟ್ಟಿ",
   "language": "kn",
   "uploadFileNames": ["attempt1.m4a", "attempt2.m4a", "attempt3.m4a"],
-  "sendEmail": false
+  "sendEmail": false,
+  "callbackUrl": "https://your.backend/callback"
 }
 ```
 
@@ -221,6 +305,7 @@ Processes multiple audio attempts for one sentence:
 
 **Typical workflow:** User records 2-5 attempts per sentence → API finds best pronunciation → Returns GOP + OHM scores
 **Processing time:** ~30-60 seconds per sentence (depending on number of attempts)
+**Rate limit:** 20 requests/minute
 
 ---
 
@@ -233,16 +318,20 @@ POST /api/v1/gop/upload
 Direct file upload for GOP testing (multipart/form-data).
 
 ```bash
+POST /api/v1/test/gop
+```
+
+GOP test using a filename already present in `audios/` or `audios/samples/` (JSON body).
+
+```bash
 POST /api/v1/test/gop-ohm
 ```
 
 Direct file upload for combined GOP+OHM testing (multipart/form-data).
 
-**Example:**
-
 ```bash
 curl -X POST http://localhost:8080/api/v1/test/gop-ohm \
-  -H "X-API-Key: dev-key-12345" \
+  -H "X-API-Key: $API_KEY" \
   -F "wav=@audio.wav" \
   -F "transcript=ಪಟ್ಟಿ" \
   -F "language=kn"
@@ -272,7 +361,7 @@ All endpoints return standardized responses:
 ### Development Mode
 
 - **Audio files**: Local files in `audios/` directory (falls back to `audios/samples/`)
-- **Authentication**: Simple API key (`dev-key-12345`)
+- **Authentication**: Simple API key from `.env` (`API_KEY`)
 - **Setup**: No AWS credentials needed
 - **Usage**: `docker-compose --profile dev up`
 
@@ -280,7 +369,7 @@ All endpoints return standardized responses:
 
 - **Audio files**: Downloaded from AWS S3
 - **Authentication**: Secure API key via environment
-- **Setup**: Requires AWS credentials and S3 bucket
+- **Setup**: Requires AWS credentials, S3 bucket, and Supabase configuration
 - **Usage**: `docker-compose up cleftcare-api`
 
 ## Environment Variables
@@ -297,7 +386,7 @@ All endpoints return standardized responses:
 
 ## Supabase Persistence
 
-When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, processed GOP/OHM results are upserted into the Supabase `UserAudioFile` table. The workflow:
+In production, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` must be set. Processed GOP/OHM results are upserted into the Supabase `UserAudioFile` table. The workflow:
 
 - Saves a placeholder record before returning `202 Accepted` when a `callbackUrl` is provided, preventing race conditions in downstream analytics
 - Updates the same record after background processing completes with GOP/OHM scores, per-phone GOP details, and processing time

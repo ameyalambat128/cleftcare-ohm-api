@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 
 from ohm import predict_ohm_rating
-from gop_module import compute_gop
+from gop_module import compute_gop, compute_gop_batch
 
 
 class AudioProcessor:
@@ -98,31 +98,36 @@ class AudioProcessor:
 
         wav_files_to_cleanup = []
 
-        # Process each file with GOP
+        downloaded_pairs = []
+
+        # Download/convert all files first so we can batch GOP
         for filename in upload_file_names:
             try:
                 wav_path = self.download_and_convert_audio(filename)
                 wav_files_to_cleanup.append(wav_path)
-                
-                gop_result = self.process_gop(wav_path, transcript)
+                downloaded_pairs.append((filename, wav_path))
+            except Exception as e:
+                results["gop_results"].append({
+                    "filename": filename,
+                    "error": str(e),
+                    "sentence_gop": float('-inf'),
+                })
 
-                gop_result["filename"] = filename
-                results["gop_results"].append(gop_result)
+        if downloaded_pairs:
+            batch_pairs = [(wav_path, transcript) for _, wav_path in downloaded_pairs]
+            nj = self._determine_parallel_jobs(len(batch_pairs))
+            batch_gop_results = compute_gop_batch(batch_pairs, nj=nj)
 
-                # Track best GOP score
-                gop_score = gop_result.get("sentence_gop", float('-inf'))
+            for (filename, wav_path), gop_result in zip(downloaded_pairs, batch_gop_results):
+                gop_entry = dict(gop_result)
+                gop_entry["filename"] = filename
+                results["gop_results"].append(gop_entry)
+
+                gop_score = gop_entry.get("sentence_gop", float('-inf'))
                 if gop_score > results["best_gop_score"]:
                     results["best_gop_score"] = gop_score
                     results["best_gop_file"] = filename
                     results["best_wav_path"] = wav_path
-
-            except Exception as e:
-                # Add error to results but continue processing other files
-                results["gop_results"].append({
-                    "filename": filename,
-                    "error": str(e),
-                    "sentence_gop": float('-inf')
-                })
 
         # Process best file with OHM if we found a valid one
         if results["best_wav_path"] and results["best_gop_file"]:
@@ -144,3 +149,13 @@ class AudioProcessor:
                 pass  # Ignore cleanup errors
 
         return results
+
+    def _determine_parallel_jobs(self, batch_size: int) -> int:
+        """Cap Kaldi parallel jobs based on CPU and optional env override."""
+        cpu_count = os.cpu_count() or 1
+        max_jobs_env = os.getenv("GOP_MAX_JOBS")
+        if max_jobs_env and max_jobs_env.isdigit():
+            max_jobs = max(1, min(int(max_jobs_env), cpu_count))
+        else:
+            max_jobs = cpu_count
+        return max(1, min(batch_size, max_jobs))
