@@ -62,6 +62,44 @@ class SupabaseSync:
             print(f"Supabase upsert failed for request {request_id}: {exc}")
             print(f"Debug - allGopScores type: {type(sanitized_all_gop)}, value preview: {str(sanitized_all_gop)[:200]}")
             print(f"Debug - perPhoneGop type: {type(sanitized_per_phone)}, value preview: {str(sanitized_per_phone)[:200]}")
+            return
+
+        # Update user average scores after successful upsert
+        self._update_user_average_scores(user_id=user_id)
+
+    def _update_user_average_scores(self, *, user_id: str) -> None:
+        """Recalculate and update average OHM/GOP scores for a user."""
+        if not self.client or not user_id:
+            return
+
+        try:
+            # Query all scores for this user
+            response = (
+                self.client.table("UserAudioFile")
+                .select("ohmScore, gopSentenceScore")
+                .eq("userId", user_id)
+                .execute()
+            )
+
+            records = response.data or []
+
+            # Calculate averages (exclude None/null values)
+            ohm_scores = [r["ohmScore"] for r in records if r.get("ohmScore") is not None]
+            gop_scores = [r["gopSentenceScore"] for r in records if r.get("gopSentenceScore") is not None]
+
+            average_ohm = sum(ohm_scores) / len(ohm_scores) if ohm_scores else None
+            average_gop = sum(gop_scores) / len(gop_scores) if gop_scores else None
+
+            # Update User table
+            self.client.table("User").update({
+                "averageOHMScore": average_ohm,
+                "averageGOPScore": average_gop,
+            }).eq("id", user_id).execute()
+
+            print(f"Updated User {user_id} averages: OHM={average_ohm}, GOP={average_gop}")
+
+        except Exception as exc:
+            print(f"Failed to update user average scores for {user_id}: {exc}")
 
     @staticmethod
     def _normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
