@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from fastapi.encoders import jsonable_encoder
 
+from gop_regression import predict_gop_regression_score
 from .supabase_client import get_supabase_client
 
 
@@ -88,7 +89,9 @@ class SupabaseSync:
             gop_scores = [r["gopSentenceScore"] for r in records if r.get("gopSentenceScore") is not None]
 
             average_ohm = sum(ohm_scores) / len(ohm_scores) if ohm_scores else None
-            average_gop = sum(gop_scores) / len(gop_scores) if gop_scores else None
+            average_gop = predict_gop_regression_score(gop_scores)
+            if average_gop is None:
+                average_gop = sum(gop_scores) / len(gop_scores) if gop_scores else None
 
             # Update User table
             self.client.table("User").update({
