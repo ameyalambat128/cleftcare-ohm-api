@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import List, Optional
+
 
 # Existing schemas - moved from app.py
 class PredictRequest(BaseModel):
@@ -19,11 +20,6 @@ class GOPRequest(BaseModel):
     transcript: str
     uploadFileName: str
     sendEmail: bool
-
-
-class EmailSchema(BaseModel):
-    subject: str
-    body: str
 
 
 # New schemas for batch processing

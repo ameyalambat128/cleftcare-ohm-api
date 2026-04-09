@@ -1,6 +1,16 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request, UploadFile, File, Form
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    BackgroundTasks,
+    Depends,
+    Header,
+    Request,
+    UploadFile,
+    File,
+    Form,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -15,19 +25,28 @@ from transformers import Wav2Vec2Model
 import torch
 import uvicorn
 import torch.nn as nn
-from mailjet_rest import Client
 from typing import List
-import uuid
 import time
 
 from ohm import predict_ohm_rating
 from gop_module import compute_gop
 
 # Import new modular components
-from models.schemas import PredictRequest, GOPRequest, EmailSchema, APIResponse
+from models.schemas import PredictRequest, GOPRequest
 from services.processing import AudioProcessor
 from services.datastore import SupabaseSync
-from api_utils.helpers import generate_request_id, validate_upload_filename, create_response, update_status, status_tracking
+from services.email_service import (
+    send_gop_result_email,
+    send_ohm_result_email,
+    send_test_prediction_email,
+)
+from api_utils.helpers import (
+    generate_request_id,
+    validate_upload_filename,
+    create_response,
+    update_status,
+    status_tracking,
+)
 from endpoints.batch import router as batch_router
 
 load_dotenv()
@@ -54,39 +73,33 @@ app.add_middleware(
 # Initialize AudioProcessor for dependency injection
 audio_processor = None
 
+
 # Authentication middleware
 def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> str:
     """Verify API key from request headers"""
-    expected_api_key = os.getenv('API_KEY')
+    expected_api_key = os.getenv("API_KEY")
 
     if not expected_api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="Server configuration error"
-        )
+        raise HTTPException(status_code=500, detail="Server configuration error")
 
     if not x_api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="API key required"
-        )
+        raise HTTPException(status_code=401, detail="API key required")
 
     if x_api_key != expected_api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key"
-        )
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
     return x_api_key
 
+
 # S3 Client Setup
-S3_BUCKET_NAME = 'cleftcare-test'
+S3_BUCKET_NAME = "cleftcare-test"
 s3 = boto3.client(
-    's3',
-    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.getenv('AWS_DEFAULT_REGION')
+    "s3",
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    region_name=os.getenv("AWS_DEFAULT_REGION"),
 )
+
 
 # Initialize global AudioProcessor after S3 client is ready
 def get_audio_processor():
@@ -102,8 +115,10 @@ Lightweight test endpoints (development): run OHM or GOP individually on a given
 - In production: downloads from S3
 """
 
+
 def _sanitize_floats_for_json(obj):
     import math
+
     if isinstance(obj, float):
         if math.isnan(obj) or math.isinf(obj):
             return None
@@ -113,6 +128,7 @@ def _sanitize_floats_for_json(obj):
     if isinstance(obj, list):
         return [_sanitize_floats_for_json(elem) for elem in obj]
     return obj
+
 
 class TestOHMInput(BaseModel):
     uploadFileName: str
@@ -125,7 +141,9 @@ async def test_ohm(body: TestOHMInput):
     try:
         wav_path = processor.download_and_convert_audio(body.uploadFileName)
         rating = predict_ohm_rating(Path(wav_path).parent, body.language)
-        return _sanitize_floats_for_json({"success": True, "ohmRating": rating, "wavPath": wav_path})
+        return _sanitize_floats_for_json(
+            {"success": True, "ohmRating": rating, "wavPath": wav_path}
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -141,16 +159,15 @@ async def test_gop(body: TestGOPInput):
     try:
         wav_path = processor.download_and_convert_audio(body.uploadFileName)
         result = compute_gop(wav_path, body.transcript)
-        return _sanitize_floats_for_json({"success": True, "gop": result, "wavPath": wav_path})
+        return _sanitize_floats_for_json(
+            {"success": True, "gop": result, "wavPath": wav_path}
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/v1/gop/upload")
-async def gop_upload(
-    wav: UploadFile = File(...),
-    transcript: str = Form(...)
-):
+async def gop_upload(wav: UploadFile = File(...), transcript: str = Form(...)):
     """
     Local file upload endpoint for GOP testing.
     Similar to shruthi-gop-original Flask endpoint.
@@ -175,7 +192,7 @@ async def gop_upload(
 
     except Exception as e:
         # Clean up on error
-        if 'wav_path' in locals() and os.path.exists(wav_path):
+        if "wav_path" in locals() and os.path.exists(wav_path):
             os.remove(wav_path)
         return {"error": str(e), "utt_id": None, "sentence_gop": None}
 
@@ -184,7 +201,7 @@ async def gop_upload(
 async def test_gop_ohm(
     wav: UploadFile = File(...),
     transcript: str = Form(...),
-    language: str = Form(default="kn")
+    language: str = Form(default="kn"),
 ):
     """
     Test endpoint for GOP+OHM processing with file upload.
@@ -204,7 +221,9 @@ async def test_gop_ohm(
     wav_path = None
     try:
         # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir="/tmp") as tmp_wav:
+        with tempfile.NamedTemporaryFile(
+            suffix=".wav", delete=False, dir="/tmp"
+        ) as tmp_wav:
             content = await wav.read()
             tmp_wav.write(content)
             wav_path = tmp_wav.name
@@ -222,16 +241,14 @@ async def test_gop_ohm(
                 "sentence_gop": gop_result.get("sentence_gop"),
                 "perphone_gop": gop_result.get("perphone_gop", []),
                 "latency_ms": gop_result.get("latency_ms"),
-                "error": gop_result.get("error")
+                "error": gop_result.get("error"),
             },
-            "ohm": {
-                "rating": ohm_rating
-            },
+            "ohm": {"rating": ohm_rating},
             "input": {
                 "transcript": transcript,
                 "language": language,
-                "filename": wav.filename
-            }
+                "filename": wav.filename,
+            },
         }
 
         # Clean up temporary file
@@ -243,50 +260,8 @@ async def test_gop_ohm(
         # Clean up on error
         if wav_path and os.path.exists(wav_path):
             os.remove(wav_path)
-        return {
-            "error": str(e),
-            "gop": None,
-            "ohm": None
-        }
+        return {"error": str(e), "gop": None, "ohm": None}
 
-
-async def send_email(email: EmailSchema):
-    api_key = os.environ.get('MAILJET_API_KEY')
-    api_secret = os.environ.get('MAILJET_API_SECRET')
-    mailjet = Client(auth=(api_key, api_secret), version='v3.1')
-
-    data = {
-        'Messages': [
-            {
-                "From": {
-                    "Email": os.environ.get("EMAIL_FROM"),
-                    "Name": os.environ.get("EMAIL_FROM_NAME")
-                },
-                "To": [
-                    # {
-                    #     "Email": "kkothadi@asu.edu",
-                    #     "Name": "Cleft Care User"
-                    # },
-                    {
-                        "Email": "alambat@asu.edu",
-                        "Name": "Cleft Care Admin"
-                    }
-                ],
-                "Subject": email.subject,
-                "HTMLPart": email.body
-            }
-        ]
-    }
-
-    try:
-        result = mailjet.send.create(data=data)
-        if result.status_code == 200:
-            print(f"Email sent successfully: {result.json()}")
-        else:
-            print(
-                f"Failed to send email: {result.status_code}, {result.json()}")
-    except Exception as e:
-        print(f"Exception occurred while sending email: {e}")
 
 """
 Health Check Endpoint
@@ -309,8 +284,7 @@ async def predict_ohm(background_tasks: BackgroundTasks):
     # name = request.name
     # prompt_number = request.promptNumber
     # upload_file_name = request.uploadFileName
-    print(
-        f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
+    print(f"Received request for userId: {user_id}, uploadFileName: {upload_file_name}")
     # Generate S3 file path based on userId
     s3_key = upload_file_name  # Customize if needed
 
@@ -327,9 +301,12 @@ async def predict_ohm(background_tasks: BackgroundTasks):
             if not temp_file_path.endswith(".wav"):
                 # Convert .m4a to .wav
                 wav_path = temp_file_path.replace(".m4a", ".wav")
-                result = subprocess.run([
-                    "ffmpeg", "-i", temp_file_path, wav_path
-                ], capture_output=True, text=True, timeout=30)
+                result = subprocess.run(
+                    ["ffmpeg", "-i", temp_file_path, wav_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
             else:
@@ -338,17 +315,15 @@ async def predict_ohm(background_tasks: BackgroundTasks):
         # Process the downloaded file for prediction
         temp_folder = Path(temp_file_path).parent
         perceptual_rating = predict_ohm_rating(temp_folder, language)
-        # Prepare email data
-        email = EmailSchema(
-            subject="CleftCare: New Prediction Result",
-            body=(
-                f"<p>The patient {user_id} and {name} was recorded in ASU by the community worker Krupa.</p>"
-                f"<p>The level of hypernasality in its speech as per cleft care is {perceptual_rating}.</p>"
-            )
-        )
 
         # Add email sending to background tasks
-        background_tasks.add_task(send_email, email)
+        background_tasks.add_task(
+            send_test_prediction_email,
+            user_id,
+            name,
+            "Krupa",
+            perceptual_rating,
+        )
         # Delete the .wav file if it was created
         if os.path.exists(wav_path) and wav_path != temp_file_path:
             os.remove(wav_path)
@@ -356,13 +331,13 @@ async def predict_ohm(background_tasks: BackgroundTasks):
         return {"perceptualRating": perceptual_rating}
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error processing file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 
 """
 Existing Endpoints - Keep all functionality intact
 """
+
 
 @app.get("/status/{user_id}")
 async def get_status(user_id: str, api_key: str = Depends(verify_api_key)):
@@ -372,7 +347,7 @@ async def get_status(user_id: str, api_key: str = Depends(verify_api_key)):
             success=True,
             data={"requests": []},
             request_id="status-check",
-            processing_time=0.001
+            processing_time=0.001,
         )
 
     # Get recent requests (last 100)
@@ -382,13 +357,18 @@ async def get_status(user_id: str, api_key: str = Depends(verify_api_key)):
         success=True,
         data={"requests": recent_requests},
         request_id="status-check",
-        processing_time=0.001
+        processing_time=0.001,
     )
 
 
 @app.post("/ohm")
 @limiter.limit("50/minute")
-async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predict_request: PredictRequest, api_key: str = Depends(verify_api_key)):
+async def predict_ohm(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    predict_request: PredictRequest,
+    api_key: str = Depends(verify_api_key),
+):
     # Generate request ID for tracking
     request_id = generate_request_id()
     start_time = time.time()
@@ -427,9 +407,12 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
             if not temp_file_path.endswith(".wav"):
                 # Convert .m4a to .wav
                 wav_path = temp_file_path.replace(".m4a", ".wav")
-                result = subprocess.run([
-                    "ffmpeg", "-i", temp_file_path, wav_path
-                ], capture_output=True, text=True, timeout=30)
+                result = subprocess.run(
+                    ["ffmpeg", "-i", temp_file_path, wav_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
             else:
@@ -441,16 +424,13 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
 
         # Only send email if sendEmail is True
         if send_email_flag:
-            # Prepare email data
-            email = EmailSchema(
-                subject="CleftCare: New Prediction Result",
-                body=(
-                    f"<p>The patient {name} recorded by the community worker {community_worker_name}.</p>"
-                    f"<p>The link to the more details for the patient - https://cleftcare-dashboard.vercel.app/dashboard/{user_id}.</p>"
-                )
-            )
             # Add email sending to background tasks
-            background_tasks.add_task(send_email, email)
+            background_tasks.add_task(
+                send_ohm_result_email,
+                user_id,
+                name,
+                community_worker_name,
+            )
             print(f"Email scheduled to be sent for user: {user_id}")
         else:
             print(f"Email sending skipped for user: {user_id}")
@@ -485,7 +465,7 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
             success=True,
             data=response_data,
             request_id=request_id,
-            processing_time=processing_time
+            processing_time=processing_time,
         )
 
     except Exception as e:
@@ -500,14 +480,19 @@ async def predict_ohm(request: Request, background_tasks: BackgroundTasks, predi
             data={},
             request_id=request_id,
             processing_time=processing_time,
-            error_message="Internal server error occurred during processing"
+            error_message="Internal server error occurred during processing",
         )
         raise HTTPException(status_code=500, detail=error_response)
 
 
 @app.post("/gop")
 @limiter.limit("200/minute")
-async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_request: GOPRequest, api_key: str = Depends(verify_api_key)):
+async def predict_gop(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    gop_request: GOPRequest,
+    api_key: str = Depends(verify_api_key),
+):
     # Generate request ID for tracking
     request_id = generate_request_id()
     start_time = time.time()
@@ -545,9 +530,12 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
             if not temp_file_path.endswith(".wav"):
                 # Convert .m4a to .wav
                 wav_path = temp_file_path.replace(".m4a", ".wav")
-                result = subprocess.run([
-                    "ffmpeg", "-i", temp_file_path, wav_path
-                ], capture_output=True, text=True, timeout=30)
+                result = subprocess.run(
+                    ["ffmpeg", "-i", temp_file_path, wav_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
             else:
@@ -558,17 +546,14 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
 
         # Only send email if sendEmail is True
         if send_email_flag:
-            # Prepare email data
-            email = EmailSchema(
-                subject="CleftCare: New GOP Assessment Result",
-                body=(
-                    f"<p>The patient {name} recorded by the community worker {community_worker_name}.</p>"
-                    f"<p>GOP Assessment completed with sentence score: {gop_result.get('sentence_gop', 'N/A')}</p>"
-                    f"<p>The link to the more details for the patient - https://cleftcare-dashboard.vercel.app/dashboard/{user_id}.</p>"
-                )
-            )
             # Add email sending to background tasks
-            background_tasks.add_task(send_email, email)
+            background_tasks.add_task(
+                send_gop_result_email,
+                user_id,
+                name,
+                community_worker_name,
+                gop_result.get("sentence_gop", "N/A"),
+            )
             print(f"Email scheduled to be sent for user: {user_id}")
         else:
             print(f"Email sending skipped for user: {user_id}")
@@ -602,7 +587,7 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
             success=True,
             data=gop_result,
             request_id=request_id,
-            processing_time=processing_time
+            processing_time=processing_time,
         )
 
     except Exception as e:
@@ -617,16 +602,14 @@ async def predict_gop(request: Request, background_tasks: BackgroundTasks, gop_r
             data={},
             request_id=request_id,
             processing_time=processing_time,
-            error_message="Internal server error occurred during GOP processing"
+            error_message="Internal server error occurred during GOP processing",
         )
         raise HTTPException(status_code=500, detail=error_response)
 
 
 # Add new batch processing endpoints with API key requirement
 app.include_router(
-    batch_router,
-    prefix="/api/v1",
-    dependencies=[Depends(verify_api_key)]
+    batch_router, prefix="/api/v1", dependencies=[Depends(verify_api_key)]
 )
 
 
