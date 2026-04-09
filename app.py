@@ -608,6 +608,8 @@ async def predict_gop(
 
 
 # Add new batch processing endpoints with API key requirement
+# MAIN ENDPOINT
+
 app.include_router(
     batch_router, prefix="/api/v1", dependencies=[Depends(verify_api_key)]
 )
